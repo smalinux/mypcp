@@ -21,7 +21,7 @@ CFILES	= smaclient.c
 CFLAGS	= -I/usr/include/pcp
 TARGETS	= smaclient
 LDOPTS	=
-LDLIBS	= -lpcp
+LDLIBS	= -lpcp -lncurses
 
 default: $(TARGETS)
 

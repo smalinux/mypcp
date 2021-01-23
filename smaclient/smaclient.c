@@ -1,20 +1,4 @@
-/*
- * pmclient - sample, simple PMAPI client
- *
- * Copyright (c) 2013-2014 Red Hat.
- * Copyright (c) 1995-2002 Silicon Graphics, Inc.  All Rights Reserved.
- * 
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- * 
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * for more details.
- */
-
+#include "ncurses.h"
 #include "pmapi.h"
 #include "libpcp.h"
 #include "pmnsmap.h"
@@ -287,6 +271,8 @@ main(int argc, char **argv)
     info_t		info;		/* values to report each sample */
     char		timebuf[26];	/* for pmCtime result */
 
+    initscr();
+
     setlinebuf(stdout);
 
     while ((c = pmGetOptions(argc, argv, &opts)) != EOF) {
@@ -367,9 +353,9 @@ main(int argc, char **argv)
 	if (lines % 15 == 0) {
 	    time_t	time;
 	    if (opts.context == PM_CONTEXT_ARCHIVE)
-		printf("Archive: %s, ", opts.archives[0]);
+		printw("Archive: %s, ", opts.archives[0]);
 	    time = info.timestamp.tv_sec;
-	    printf("Host: %s, %d cpu(s), %s",
+	    printw("Host: %s, %d cpu(s), %s",
 		    host, ncpu,
 		    pmCtime(&time, timebuf));
 /* - report format
@@ -377,49 +363,55 @@ main(int argc, char **argv)
  Util   CPU    Util  (Mbytes)   IOPS    1 Min  15 Min
 X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
 */
-	    printf("  CPU");
+
+	    printw("  CPU");
 	    if (ncpu > 1)
-		printf("  Busy    Busy");
-	    printf("  Free Mem   Disk     Load Average\n");
-	    printf(" Util");
+		printw("  Busy    Busy");
+	    printw("  Free Mem   Disk     Load Average\n");
+	    printw(" Util");
 	    if (ncpu > 1)
-		printf("   CPU    Util");
-	    printf("  (Mbytes)   IOPS    1 Min  15 Min\n");
+		printw("   CPU    Util");
+	    printw("  (Mbytes)   IOPS    1 Min  15 Min\n");
+    		refresh();		// clear & start
 	}
 	if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
 	    __pmtimevalSleep(opts.interval);
 	get_sample(&info);
+
+
 	if (info.cpu_util >= 0)
-	    printf("%5.2f", info.cpu_util);
+	    printw("%5.2f", info.cpu_util);
 	else
-	    printf("%5.5s", "?");
+	    printw("%5.5s", "?");
 	if (ncpu > 1) {
 	    if (info.peak_cpu >= 0)
-		printf("   %3d", info.peak_cpu);
+		printw("   %3d", info.peak_cpu);
 	    else
-		printf("   %3.3s", "?");
+		printw("   %3.3s", "?");
 	    if (info.peak_cpu_util >= 0)
-		printf("   %5.2f", info.peak_cpu_util);
+		printw("   %5.2f", info.peak_cpu_util);
 	    else
-		printf("   %5.5s", "?");
+		printw("   %5.5s", "?");
 	}
 	if (info.freemem >= 0)
-	    printf(" %9.3f", info.freemem);
+	    printw(" %9.3f", info.freemem);
 	else
-	    printf(" %9.9s", "?");
+	    printw(" %9.9s", "?");
 	if (info.dkiops >= 0)
-	    printf(" %6d", info.dkiops);
+	    printw(" %6d", info.dkiops);
 	else
-	    printf(" %6.6s", "?");
+	    printw(" %6.6s", "?");
 	if (info.load1 >= 0)
-	    printf("  %7.2f", info.load1);
+	    printw("  %7.2f", info.load1);
 	else
-	    printf("  %7.7s", "?");
+	    printw("  %7.7s", "?");
 	if (info.load15 >= 0)
-	    printf("  %7.2f\n", info.load15);
+	    printw("  %7.2f\n", info.load15);
 	else
-	    printf("  %7.7s\n", "?");
+	    printw("  %7.7s\n", "?");
  	lines++;
+    	refresh();		// clear & start
     }
+    endwin();
     exit(0);
 }

@@ -13,14 +13,14 @@
 # for more details.
 # 
 
-TOPDIR = ../pcp
+TOPDIR = ../../pcp
 include $(TOPDIR)/src/include/builddefs
 
 CFILES	= smaclient.c 
 CMDTARGET = smaclient$(EXECSUFFIX)
 TARGETS = $(CMDTARGET)
 
-LLDLIBS	= $(PCPLIB)
+LLDLIBS	= -lpcp -lncurses
 LDIRT	= pmnsmap.h mylog.* runme.sh *.o $(TARGETS)
 CONFIGS	= pmnsmap.spec pmlogger.config
 DEMODIR	= $(PCP_DEMOS_DIR)/pmclient
