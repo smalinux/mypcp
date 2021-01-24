@@ -27,25 +27,42 @@ get_ncpu(void)
     /* there is only one metric in the pmclient_init group */
     pmID	pmidlist[1];
     pmDesc	desclist[1];
+    pmDesc	mydesc;
     pmResult	*rp;
     pmAtomValue	atom;
     int		sts;
+    char	*buf;
+    char	**buff;
+    int 	num = NULL;
+    char	tmp[200]; 
 
-    if ((sts = pmLookupName(1, pmclient_init, pmidlist)) < 0) {
-	fprintf(stderr, "%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
-	fprintf(stderr, "%s: metric \"%s\" not in name space\n",
-			pmGetProgname(), pmclient_init[0]);
-	exit(1);
-    }
-    if ((sts = pmLookupDesc(pmidlist[0], desclist)) < 0) {
-	fprintf(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
-		pmGetProgname(), pmclient_init[0], pmIDStr(pmidlist[0]), pmErrStr(sts));
-	exit(1);
-    }
-    if ((sts = pmFetch(1, pmidlist, &rp)) < 0) {
-	fprintf(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
-	exit(1);
-    }
+    sts = pmLookupName(1, pmclient_init, pmidlist);
+    sts = pmLookupDesc(pmidlist, desclist);
+    pmLookupText(pmidlist[0], PM_TEXT_ONELINE, &buf);
+    printf("oneline desc: %s\n", buf);
+
+    /*pmLookupDesc(pmidlist, &mydesc);
+    pmLookupInDomText(mydesc.indom, PM_TEXT_ONELINE, &buf);
+    printf("oneline desc: %s\n", buf);
+    */
+
+    sts = pmFetch(1, pmidlist, &rp);
+
+    // print pmID as $pminfo -m 
+    printf("Name of pmID: %s \n", pmIDStr(rp->vset[0]->pmid));
+    
+   // print metric name: "hinv.cpu" - although not work here!
+    pmNameID(pmidlist, &buf);
+    printf("Metric name of pmID: %s \n", buf);
+
+    // pmGetChildren
+    int i = 0;
+    num = pmGetChildren("kernel.uname", &buff);
+    printf("number: %d \n", num);
+    __pmPrintMetricNames(stdout, num, buff, " or ");
+    printf("\n");
+    //free(buff);
+    // SMA: print them all...
 
     /* the thing we want is known to be the first value */
     pmExtractValue(rp->vset[0]->valfmt, rp->vset[0]->vlist, desclist[0].type,
@@ -75,6 +92,9 @@ get_sample(info_t *ip)
     pmAtomValue		atom;
     double		dt;
 
+    char		*buf;
+    char		**buff;
+
     if (first) {
 	/* first time initialization */
 	mbyte_scale.dimSpace = 1;
@@ -103,6 +123,13 @@ get_sample(info_t *ip)
 		    pmGetProgname(), pmclient_sample[i], pmIDStr(pmidlist[i]), pmErrStr(sts));
 		exit(1);
 	    }
+	    // SMA: pmNameID
+	    pmNameID(pmidlist[i], &buf);
+	    printf("pmNameID pmID: %s \n", buf);
+	   // SMA: pmNameAll 
+	    sts = pmNameAll(pmidlist[i], &buff);
+	    __pmPrintMetricNames(stdout, sts, buff, " or ");
+	    printf("\n");
 	}
     }
 
@@ -267,11 +294,14 @@ main(int argc, char **argv)
     setlinebuf(stdout);
 
     /* SMA: START Handle params */
+    // Blank.
     /* SMA: END Handle params */
-    opts.context = PM_CONTEXT_HOST;
-    source = "local:";
 
-    sts = c = pmNewContext(opts.context, source);
+    // SMA: Start Make new context
+    // pmNewContext(PM_CONTEXT_HOST, "127.0.0.1");
+    opts.context = PM_CONTEXT_LOCAL;
+    sts = c = pmNewContext(opts.context, "");
+    // SMA: End Make new context
 
     /* complete TZ and time window option (origin) setup */
     if (pmGetContextOptions(c, &opts)) {
@@ -279,9 +309,6 @@ main(int argc, char **argv)
 	exit(1);
     }
 
-    host = pmGetContextHostName(c);
-    printf("HOST: %s\n",host);
-    ncpu = get_ncpu();
 
     /* set a default sampling interval if none has been requested */
     if (opts.interval.tv_sec == 0 && opts.interval.tv_usec == 0)
@@ -294,64 +321,71 @@ main(int argc, char **argv)
     /* set sampling loop termination via the command line options */
     samples = opts.samples ? opts.samples : -1;
 
-    while (samples == -1 || samples-- > 0) {
-	if (lines % 15 == 0) {
-	    time_t	time;
-	    time = info.timestamp.tv_sec;
-	    printf("Host: %s, %d cpu(s), %s",
-		    host, ncpu,
-		    pmCtime(&time, timebuf));
-/* - report format
-  CPU  Busy    Busy  Free Mem   Disk     Load Average
- Util   CPU    Util  (Mbytes)   IOPS    1 Min  15 Min
-X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
-*/
+    // ========================================================================
 
-	    printf("  CPU");
-	    if (ncpu > 1)
-		printf("  Busy    Busy");
-	    printf("  Free Mem   Disk     Load Average\n");
-	    printf(" Util");
-	    if (ncpu > 1)
-		printf("   CPU    Util");
-	    printf("  (Mbytes)   IOPS    1 Min  15 Min\n");
-	}
-	if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
-	    __pmtimevalSleep(opts.interval);
-	get_sample(&info);
+    // Program name manipulation
+    printf("Default program name: %s\n", pmGetProgname());
+    pmSetProgname("smaall");
+    printf("New program name: %s\n", pmGetProgname());
+    
+    /*
+     * Start PMAPI Context
+     */
+
+    
+    /*
+     * End PMAPI Context
+     */
+    
+   /*
+    * Start timeval manipulation
+    *$ man && 3.8.10 PCP guide.
+    */ 
+    time_t time; 
+    // pmtimevalNow
+    pmtimevalNow(&time);
+    printf("pmtimevalNow: %s", pmCtime(&time, timebuf));
+
+    // pmtimevalInc, pmtimevalDec, pmtimevalAdd, pmtimevalSub,
+    // pmtimevalToReal, pmtimevalFromReal, pmPrintStamp, pmPrintHighResStamp
+    pmtimevalInc(&time, &time);
+    printf("pmtimevalInc: %s", pmCtime(&time, timebuf));
+
+    // another way: Google.
+    time = info.timestamp.tv_sec;
+    printf("Time: %s", pmCtime(&time, timebuf));
 
 
-	if (info.cpu_util >= 0)
-	    printf("%5.2f", info.cpu_util);
-	else
-	    printf("%5.5s", "?");
-	if (ncpu > 1) {
-	    if (info.peak_cpu >= 0)
-		printf("   %3d", info.peak_cpu);
-	    else
-		printf("   %3.3s", "?");
-	    if (info.peak_cpu_util >= 0)
-		printf("   %5.2f", info.peak_cpu_util);
-	    else
-		printf("   %5.5s", "?");
-	}
-	if (info.freemem >= 0)
-	    printf(" %9.3f", info.freemem);
-	else
-	    printf(" %9.9s", "?");
-	if (info.dkiops >= 0)
-	    printf(" %6d", info.dkiops);
-	else
-	    printf(" %6.6s", "?");
-	if (info.load1 >= 0)
-	    printf("  %7.2f", info.load1);
-	else
-	    printf("  %7.7s", "?");
-	if (info.load15 >= 0)
-	    printf("  %7.2f\n", info.load15);
-	else
-	    printf("  %7.7s\n", "?");
- 	lines++;
-    }
+    /*
+     * End timeval manipulation
+     */
+
+    printf("Rright?!===============================\n");
+    // hostname
+    host = pmGetContextHostName(c);
+    printf("pmGetContextHostNam (Host simply!): %s\n",host);
+
+    // cpu
+    ncpu = get_ncpu();
+    printf("%d cpu(s)\n", ncpu);
+
+    /*
+     * Start Metric Description
+     */
+
+    /*
+     * End Metric Description
+     */
+    
+    /*
+     * Start Timezone
+     */
+
+
+    /*
+     * End Timezone
+     */
+
+
     exit(0);
 }
