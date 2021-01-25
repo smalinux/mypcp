@@ -9,3 +9,7 @@ pmclient_sample {
     mem.freemem		FREEMEM
     disk.all.total		DKIOPS
 }
+
+sohaib_cpu {
+	hinv.cpu.vendor 	SMACPU
+}

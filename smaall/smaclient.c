@@ -41,6 +41,9 @@ get_ncpu(void)
     pmLookupText(pmidlist[0], PM_TEXT_ONELINE, &buf);
     printf("oneline desc: %s\n", buf);
 
+    pmNameInDom(desclist[0].indom, 0, &buf);
+    printf("&&&&&&&&&&&& pmNameInDom: %s\n", buf);
+
     /*pmLookupDesc(pmidlist, &mydesc);
     pmLookupInDomText(mydesc.indom, PM_TEXT_ONELINE, &buf);
     printf("oneline desc: %s\n", buf);
@@ -66,7 +69,10 @@ get_ncpu(void)
     printf("\n");	// or pmflush();
     //free(buff);
 
-    // SMA: print them all...
+
+    pmInDom 	idm;
+    pmLookupInDom(idm, "/proc/pressure/memory");
+    printf("pmLookupInDom: %s\n", idm);
 
     /* the thing we want is known to be the first value */
     pmExtractValue(rp->vset[0]->valfmt, rp->vset[0]->vlist, desclist[0].type,
@@ -130,6 +136,9 @@ get_sample(info_t *ip)
 	    // SMA: pmNameID
 	    pmNameID(pmidlist[i], &buf);
 	    printf("pmNameID pmID: %s \n", buf);
+	    pmNameInDom(desclist[0].indom, 0, &buf);
+	    printf("&&&&&&&&&&&& pmNameInDom: %s\n", buf);
+
 	   // SMA: pmNameAll 
 	    sts = pmNameAll(pmidlist[i], &buff);
 	    __pmPrintMetricNames(stdout, sts, buff, " or ");
@@ -155,6 +164,7 @@ get_sample(info_t *ip)
 	else {
 	    inst1 = pmLookupInDom(desclist[LOADAV].indom, "1 minute");
 	    inst15 = pmLookupInDom(desclist[LOADAV].indom, "15 minute");
+	    printf(">>>>>>> %d\n", inst15);
 	}
 	if (inst1 < 0) {
 	    fprintf(stderr, "%s: cannot translate instance for 1 minute load average\n", pmGetProgname());
@@ -389,6 +399,25 @@ main(int argc, char **argv)
     /*
      * End Timezone
      */
+
+    pmID	*pmid;
+    pmDesc	*desc;
+    pmDesc	mydesc;
+    char	*buf;
+    int 	err;
+    int numm;
+    int i;
+
+	numm = sizeof(sohaib_cpu) / sizeof(char *);
+	pmid = (pmID *)malloc(numm * sizeof(pmid[0]));
+	desc = (pmDesc *)malloc(numm * sizeof(desc[0]));
+	pmLookupName(numm, sohaib_cpu, pmid);
+	for (i = 0; i < numm; i++) {
+	    pmLookupDesc(pmid[i], &desc[i]);
+	    err = pmNameInDom(desc[0].indom, 1, &buf);
+	    printf("9999999999999999 pmNameInDom: %s\n", buf);
+	}
+
 
 
     exit(0);
