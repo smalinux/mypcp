@@ -27,25 +27,52 @@ get_ncpu(void)
     /* there is only one metric in the pmclient_init group */
     pmID	pmidlist[1];
     pmDesc	desclist[1];
+    pmDesc	mydesc;
     pmResult	*rp;
     pmAtomValue	atom;
     int		sts;
+    char	*buf;
+    char	**buff;
+    int 	num = NULL;
+    char	tmp[200]; 
 
-    if ((sts = pmLookupName(1, pmclient_init, pmidlist)) < 0) {
-	wprintw(stderr, "%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
-	wprintw(stderr, "%s: metric \"%s\" not in name space\n",
-			pmGetProgname(), pmclient_init[0]);
-	exit(1);
-    }
-    if ((sts = pmLookupDesc(pmidlist[0], desclist)) < 0) {
-	wprintw(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
-		pmGetProgname(), pmclient_init[0], pmIDStr(pmidlist[0]), pmErrStr(sts));
-	exit(1);
-    }
-    if ((sts = pmFetch(1, pmidlist, &rp)) < 0) {
-	wprintw(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
-	exit(1);
-    }
+    sts = pmLookupName(1, pmclient_init, pmidlist);
+    sts = pmLookupDesc(pmidlist, desclist);
+    pmLookupText(pmidlist[0], PM_TEXT_ONELINE, &buf);
+    printf("oneline desc: %s\n", buf);
+
+    pmNameInDom(desclist[0].indom, 0, &buf);
+    printf("&&&&&&&&&&&& pmNameInDom: %s\n", buf);
+
+    /*pmLookupDesc(pmidlist, &mydesc);
+    pmLookupInDomText(mydesc.indom, PM_TEXT_ONELINE, &buf);
+    printf("oneline desc: %s\n", buf);
+    */
+
+    sts = pmFetch(1, pmidlist, &rp);
+
+    // print pmID as $pminfo -m 
+    printf("Name of pmID: %s \n", pmIDStr(rp->vset[0]->pmid));
+    
+   // print metric name: "hinv.cpu" - although not work here!
+    pmNameID(pmidlist, &buf);
+    printf("=Metric name of pmID: %s \n", buf);
+    sts = pmNameAll(pmidlist[0], &buff);
+    __pmPrintMetricNames(stdout, sts, buff, " or ");
+    printf("\n");	// or pmflush();
+
+    // pmGetChildren
+    int i = 0;
+    num = pmGetChildren("kernel.uname", &buff);
+    printf("number: %d \n", num);
+    __pmPrintMetricNames(stdout, num, buff, " or ");
+    printf("\n");	// or pmflush();
+    //free(buff);
+
+
+    pmInDom 	idm;
+    pmLookupInDom(idm, "/proc/pressure/memory");
+    printf("pmLookupInDom: %s\n", idm);
 
     /* the thing we want is known to be the first value */
     pmExtractValue(rp->vset[0]->valfmt, rp->vset[0]->vlist, desclist[0].type,
@@ -75,6 +102,9 @@ get_sample(info_t *ip)
     pmAtomValue		atom;
     double		dt;
 
+    char		*buf;
+    char		**buff;
+
     if (first) {
 	/* first time initialization */
 	mbyte_scale.dimSpace = 1;
@@ -82,33 +112,43 @@ get_sample(info_t *ip)
 
 	numpmid = sizeof(pmclient_sample) / sizeof(char *);
 	if ((pmidlist = (pmID *)malloc(numpmid * sizeof(pmidlist[0]))) == NULL) {
-	    wprintw(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
+	    fprintf(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
 	    exit(1);
 	}
 	if ((desclist = (pmDesc *)malloc(numpmid * sizeof(desclist[0]))) == NULL) {
-	    wprintw(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
+	    fprintf(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
 	    exit(1);
 	}
 	if ((sts = pmLookupName(numpmid, pmclient_sample, pmidlist)) < 0) {
-	    wprintw("%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
+	    printf("%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
 	    for (i = 0; i < numpmid; i++) {
 		if (pmidlist[i] == PM_ID_NULL)
-		    wprintw(stderr, "%s: metric \"%s\" not in name space\n", pmGetProgname(), pmclient_sample[i]);
+		    fprintf(stderr, "%s: metric \"%s\" not in name space\n", pmGetProgname(), pmclient_sample[i]);
 	    }
 	    exit(1);
 	}
 	for (i = 0; i < numpmid; i++) {
 	    if ((sts = pmLookupDesc(pmidlist[i], &desclist[i])) < 0) {
-		wprintw(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
+		fprintf(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
 		    pmGetProgname(), pmclient_sample[i], pmIDStr(pmidlist[i]), pmErrStr(sts));
 		exit(1);
 	    }
+	    // SMA: pmNameID
+	    pmNameID(pmidlist[i], &buf);
+	    printf("pmNameID pmID: %s \n", buf);
+	    pmNameInDom(desclist[0].indom, 0, &buf);
+	    printf("&&&&&&&&&&&& pmNameInDom: %s\n", buf);
+
+	   // SMA: pmNameAll 
+	    sts = pmNameAll(pmidlist[i], &buff);
+	    __pmPrintMetricNames(stdout, sts, buff, " or ");
+	    printf("\n");
 	}
     }
 
     /* fetch the current metrics */
     if ((sts = pmFetch(numpmid, pmidlist, &crp)) < 0) {
-	wprintw(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
+	fprintf(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
 	exit(1);
     }
 
@@ -124,13 +164,14 @@ get_sample(info_t *ip)
 	else {
 	    inst1 = pmLookupInDom(desclist[LOADAV].indom, "1 minute");
 	    inst15 = pmLookupInDom(desclist[LOADAV].indom, "15 minute");
+	    printf(">>>>>>> %d\n", inst15);
 	}
 	if (inst1 < 0) {
-	    wprintw(stderr, "%s: cannot translate instance for 1 minute load average\n", pmGetProgname());
+	    fprintf(stderr, "%s: cannot translate instance for 1 minute load average\n", pmGetProgname());
 	    exit(1);
 	}
 	if (inst15 < 0) {
-	    wprintw(stderr, "%s: cannot translate instance for 15 minute load average\n", pmGetProgname());
+	    fprintf(stderr, "%s: cannot translate instance for 15 minute load average\n", pmGetProgname());
 	    exit(1);
 	}
 	pmDelProfile(desclist[LOADAV].indom, 0, NULL);	/* all off */
@@ -205,9 +246,9 @@ get_sample(info_t *ip)
 	    if (sts < 0) {
 		/* should never happen */
 		if (pmDebugOptions.value) {
-		    wprintw(stderr, "%s: get_sample: Botch: %s (%s) scale conversion from %s", 
+		    fprintf(stderr, "%s: get_sample: Botch: %s (%s) scale conversion from %s", 
 			pmGetProgname(), pmIDStr(desclist[FREEMEM].pmid), pmclient_sample[FREEMEM], pmUnitsStr(&desclist[FREEMEM].units));
-		    wprintw(stderr, " to %s failed: %s\n", pmUnitsStr(&mbyte_scale), pmErrStr(sts));
+		    fprintf(stderr, " to %s failed: %s\n", pmUnitsStr(&mbyte_scale), pmErrStr(sts));
 		}
 		ip->freemem = 0;
 	    }
@@ -262,23 +303,19 @@ main(int argc, char **argv)
     const char		*host;
     info_t		info;		/* values to report each sample */
     char		timebuf[26];	/* for pmCtime result */
-    WINDOW		*new;
-    int 		height;
-    int 		width;
 
 
     setlinebuf(stdout);
-    initscr();
-    getmaxyx(stdscr, height, width);
-    new = newwin(height -2, width -2, 1, 1);
-    scrollok(new, TRUE);
 
     /* SMA: START Handle params */
+    // Blank.
     /* SMA: END Handle params */
-    opts.context = PM_CONTEXT_HOST;
-    source = "local:";
 
-    sts = c = pmNewContext(opts.context, source);
+    // SMA: Start Make new context
+    // pmNewContext(PM_CONTEXT_HOST, "127.0.0.1");
+    opts.context = PM_CONTEXT_LOCAL;
+    sts = c = pmNewContext(opts.context, "");
+    // SMA: End Make new context
 
     /* complete TZ and time window option (origin) setup */
     if (pmGetContextOptions(c, &opts)) {
@@ -286,9 +323,6 @@ main(int argc, char **argv)
 	exit(1);
     }
 
-    host = pmGetContextHostName(c);
-    wprintw(new, "HOST: %s\n",host);
-    ncpu = get_ncpu();
 
     /* set a default sampling interval if none has been requested */
     if (opts.interval.tv_sec == 0 && opts.interval.tv_usec == 0)
@@ -301,66 +335,90 @@ main(int argc, char **argv)
     /* set sampling loop termination via the command line options */
     samples = opts.samples ? opts.samples : -1;
 
-    while (samples == -1 || samples-- > 0) {
-	if (lines % 15 == 0) {
-	    time_t	time;
-	    time = info.timestamp.tv_sec;
-	    wprintw(new, "Host: %s, %d cpu(s), %s",
-		    host, ncpu,
-		    pmCtime(&time, timebuf));
-/* - report format
-  CPU  Busy    Busy  Free Mem   Disk     Load Average
- Util   CPU    Util  (Mbytes)   IOPS    1 Min  15 Min
-X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
-*/
+    // ========================================================================
 
-	    wprintw(new, "  CPU");
-	    if (ncpu > 1)
-		wprintw(new, "  Busy    Busy");
-	    wprintw(new, "  Free Mem   Disk     Load Average\n");
-	    wprintw(new, " Util");
-	    if (ncpu > 1)
-		wprintw(new, "   CPU    Util");
-	    wprintw(new, "  (Mbytes)   IOPS    1 Min  15 Min\n");
+    // Program name manipulation
+    printf("Default program name: %s\n", pmGetProgname());
+    pmSetProgname("smaall");
+    printf("New program name: %s\n", pmGetProgname());
+    
+    /*
+     * Start PMAPI Context
+     */
+
+    
+    /*
+     * End PMAPI Context
+     */
+    
+   /*
+    * Start timeval manipulation
+    *$ man && 3.8.10 PCP guide.
+    */ 
+    time_t time; 
+    // pmtimevalNow
+    pmtimevalNow(&time);
+    printf("pmtimevalNow: %s", pmCtime(&time, timebuf));
+
+    // pmtimevalInc, pmtimevalDec, pmtimevalAdd, pmtimevalSub,
+    // pmtimevalToReal, pmtimevalFromReal, pmPrintStamp, pmPrintHighResStamp
+    pmtimevalInc(&time, &time);
+    printf("pmtimevalInc: %s", pmCtime(&time, timebuf));
+
+    // another way: Google.
+    time = info.timestamp.tv_sec;
+    printf("Time: %s", pmCtime(&time, timebuf));
+
+
+    /*
+     * End timeval manipulation
+     */
+
+    printf("Rright?!===============================\n");
+    // hostname
+    host = pmGetContextHostName(c);
+    printf("pmGetContextHostNam (Host simply!): %s\n",host);
+
+    // cpu
+    ncpu = get_ncpu();
+    printf("%d cpu(s)\n", ncpu);
+
+    /*
+     * Start Metric Description
+     */
+
+    /*
+     * End Metric Description
+     */
+    
+    /*
+     * Start Timezone
+     */
+
+
+    /*
+     * End Timezone
+     */
+
+    pmID	*pmid;
+    pmDesc	*desc;
+    pmDesc	mydesc;
+    char	*buf;
+    int 	err;
+    int numm;
+    int i;
+
+	numm = sizeof(sohaib_cpu) / sizeof(char *);
+	pmid = (pmID *)malloc(numm * sizeof(pmid[0]));
+	desc = (pmDesc *)malloc(numm * sizeof(desc[0]));
+	pmLookupName(numm, sohaib_cpu, pmid);
+	for (i = 0; i < numm; i++) {
+	    pmLookupDesc(pmid[i], &desc[i]);
+	    err = pmNameInDom(desc[0].indom, 1, &buf);
+	    printf("9999999999999999 pmNameInDom: %s\n", buf);
 	}
-	if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
-	    __pmtimevalSleep(opts.interval);
-	get_sample(&info);
 
 
-	if (info.cpu_util >= 0)
-	    wprintw(new, "%5.2f", info.cpu_util);
-	else
-	    wprintw(new, "%5.5s", "?");
-	if (ncpu > 1) {
-	    if (info.peak_cpu >= 0)
-		wprintw(new, "   %3d", info.peak_cpu);
-	    else
-		wprintw(new, "   %3.3s", "?");
-	    if (info.peak_cpu_util >= 0)
-		wprintw(new, "   %5.2f", info.peak_cpu_util);
-	    else
-		wprintw(new, "   %5.5s", "?");
-	}
-	if (info.freemem >= 0)
-	    wprintw(new, " %9.3f", info.freemem);
-	else
-	    wprintw(new, " %9.9s", "?");
-	if (info.dkiops >= 0)
-	    wprintw(new, " %6d", info.dkiops);
-	else
-	    wprintw(new, " %6.6s", "?");
-	if (info.load1 >= 0)
-	    wprintw(new, "  %7.2f", info.load1);
-	else
-	    wprintw(new, "  %7.7s", "?");
-	if (info.load15 >= 0)
-	    wprintw(new, "  %7.2f\n", info.load15);
-	else
-	    wprintw(new, "  %7.7s\n", "?");
- 	lines++;
-	wrefresh(new);
-    }
-    endwin();
+
     exit(0);
 }
