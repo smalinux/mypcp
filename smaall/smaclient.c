@@ -53,15 +53,19 @@ get_ncpu(void)
     
    // print metric name: "hinv.cpu" - although not work here!
     pmNameID(pmidlist, &buf);
-    printf("Metric name of pmID: %s \n", buf);
+    printf("=Metric name of pmID: %s \n", buf);
+    sts = pmNameAll(pmidlist[0], &buff);
+    __pmPrintMetricNames(stdout, sts, buff, " or ");
+    printf("\n");	// or pmflush();
 
     // pmGetChildren
     int i = 0;
     num = pmGetChildren("kernel.uname", &buff);
     printf("number: %d \n", num);
     __pmPrintMetricNames(stdout, num, buff, " or ");
-    printf("\n");
+    printf("\n");	// or pmflush();
     //free(buff);
+
     // SMA: print them all...
 
     /* the thing we want is known to be the first value */

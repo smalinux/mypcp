@@ -32,18 +32,18 @@ get_ncpu(void)
     int		sts;
 
     if ((sts = pmLookupName(1, pmclient_init, pmidlist)) < 0) {
-	fprintf(stderr, "%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
-	fprintf(stderr, "%s: metric \"%s\" not in name space\n",
+	wprintw(stderr, "%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
+	wprintw(stderr, "%s: metric \"%s\" not in name space\n",
 			pmGetProgname(), pmclient_init[0]);
 	exit(1);
     }
     if ((sts = pmLookupDesc(pmidlist[0], desclist)) < 0) {
-	fprintf(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
+	wprintw(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
 		pmGetProgname(), pmclient_init[0], pmIDStr(pmidlist[0]), pmErrStr(sts));
 	exit(1);
     }
     if ((sts = pmFetch(1, pmidlist, &rp)) < 0) {
-	fprintf(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
+	wprintw(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
 	exit(1);
     }
 
@@ -82,24 +82,24 @@ get_sample(info_t *ip)
 
 	numpmid = sizeof(pmclient_sample) / sizeof(char *);
 	if ((pmidlist = (pmID *)malloc(numpmid * sizeof(pmidlist[0]))) == NULL) {
-	    fprintf(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
+	    wprintw(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
 	    exit(1);
 	}
 	if ((desclist = (pmDesc *)malloc(numpmid * sizeof(desclist[0]))) == NULL) {
-	    fprintf(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
+	    wprintw(stderr, "%s: get_sample: malloc: %s\n", pmGetProgname(), osstrerror());
 	    exit(1);
 	}
 	if ((sts = pmLookupName(numpmid, pmclient_sample, pmidlist)) < 0) {
-	    printf("%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
+	    wprintw("%s: pmLookupName: %s\n", pmGetProgname(), pmErrStr(sts));
 	    for (i = 0; i < numpmid; i++) {
 		if (pmidlist[i] == PM_ID_NULL)
-		    fprintf(stderr, "%s: metric \"%s\" not in name space\n", pmGetProgname(), pmclient_sample[i]);
+		    wprintw(stderr, "%s: metric \"%s\" not in name space\n", pmGetProgname(), pmclient_sample[i]);
 	    }
 	    exit(1);
 	}
 	for (i = 0; i < numpmid; i++) {
 	    if ((sts = pmLookupDesc(pmidlist[i], &desclist[i])) < 0) {
-		fprintf(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
+		wprintw(stderr, "%s: cannot retrieve description for metric \"%s\" (PMID: %s)\nReason: %s\n",
 		    pmGetProgname(), pmclient_sample[i], pmIDStr(pmidlist[i]), pmErrStr(sts));
 		exit(1);
 	    }
@@ -108,7 +108,7 @@ get_sample(info_t *ip)
 
     /* fetch the current metrics */
     if ((sts = pmFetch(numpmid, pmidlist, &crp)) < 0) {
-	fprintf(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
+	wprintw(stderr, "%s: pmFetch: %s\n", pmGetProgname(), pmErrStr(sts));
 	exit(1);
     }
 
@@ -126,11 +126,11 @@ get_sample(info_t *ip)
 	    inst15 = pmLookupInDom(desclist[LOADAV].indom, "15 minute");
 	}
 	if (inst1 < 0) {
-	    fprintf(stderr, "%s: cannot translate instance for 1 minute load average\n", pmGetProgname());
+	    wprintw(stderr, "%s: cannot translate instance for 1 minute load average\n", pmGetProgname());
 	    exit(1);
 	}
 	if (inst15 < 0) {
-	    fprintf(stderr, "%s: cannot translate instance for 15 minute load average\n", pmGetProgname());
+	    wprintw(stderr, "%s: cannot translate instance for 15 minute load average\n", pmGetProgname());
 	    exit(1);
 	}
 	pmDelProfile(desclist[LOADAV].indom, 0, NULL);	/* all off */
@@ -205,9 +205,9 @@ get_sample(info_t *ip)
 	    if (sts < 0) {
 		/* should never happen */
 		if (pmDebugOptions.value) {
-		    fprintf(stderr, "%s: get_sample: Botch: %s (%s) scale conversion from %s", 
+		    wprintw(stderr, "%s: get_sample: Botch: %s (%s) scale conversion from %s", 
 			pmGetProgname(), pmIDStr(desclist[FREEMEM].pmid), pmclient_sample[FREEMEM], pmUnitsStr(&desclist[FREEMEM].units));
-		    fprintf(stderr, " to %s failed: %s\n", pmUnitsStr(&mbyte_scale), pmErrStr(sts));
+		    wprintw(stderr, " to %s failed: %s\n", pmUnitsStr(&mbyte_scale), pmErrStr(sts));
 		}
 		ip->freemem = 0;
 	    }
@@ -262,9 +262,16 @@ main(int argc, char **argv)
     const char		*host;
     info_t		info;		/* values to report each sample */
     char		timebuf[26];	/* for pmCtime result */
+    WINDOW		*new;
+    int 		height;
+    int 		width;
 
 
     setlinebuf(stdout);
+    initscr();
+    getmaxyx(stdscr, height, width);
+    new = newwin(height -2, width -2, 1, 1);
+    scrollok(new, TRUE);
 
     /* SMA: START Handle params */
     /* SMA: END Handle params */
@@ -280,7 +287,7 @@ main(int argc, char **argv)
     }
 
     host = pmGetContextHostName(c);
-    printf("HOST: %s\n",host);
+    wprintw(new, "HOST: %s\n",host);
     ncpu = get_ncpu();
 
     /* set a default sampling interval if none has been requested */
@@ -298,7 +305,7 @@ main(int argc, char **argv)
 	if (lines % 15 == 0) {
 	    time_t	time;
 	    time = info.timestamp.tv_sec;
-	    printf("Host: %s, %d cpu(s), %s",
+	    wprintw(new, "Host: %s, %d cpu(s), %s",
 		    host, ncpu,
 		    pmCtime(&time, timebuf));
 /* - report format
@@ -307,14 +314,14 @@ main(int argc, char **argv)
 X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
 */
 
-	    printf("  CPU");
+	    wprintw(new, "  CPU");
 	    if (ncpu > 1)
-		printf("  Busy    Busy");
-	    printf("  Free Mem   Disk     Load Average\n");
-	    printf(" Util");
+		wprintw(new, "  Busy    Busy");
+	    wprintw(new, "  Free Mem   Disk     Load Average\n");
+	    wprintw(new, " Util");
 	    if (ncpu > 1)
-		printf("   CPU    Util");
-	    printf("  (Mbytes)   IOPS    1 Min  15 Min\n");
+		wprintw(new, "   CPU    Util");
+	    wprintw(new, "  (Mbytes)   IOPS    1 Min  15 Min\n");
 	}
 	if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
 	    __pmtimevalSleep(opts.interval);
@@ -322,36 +329,38 @@ X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
 
 
 	if (info.cpu_util >= 0)
-	    printf("%5.2f", info.cpu_util);
+	    wprintw(new, "%5.2f", info.cpu_util);
 	else
-	    printf("%5.5s", "?");
+	    wprintw(new, "%5.5s", "?");
 	if (ncpu > 1) {
 	    if (info.peak_cpu >= 0)
-		printf("   %3d", info.peak_cpu);
+		wprintw(new, "   %3d", info.peak_cpu);
 	    else
-		printf("   %3.3s", "?");
+		wprintw(new, "   %3.3s", "?");
 	    if (info.peak_cpu_util >= 0)
-		printf("   %5.2f", info.peak_cpu_util);
+		wprintw(new, "   %5.2f", info.peak_cpu_util);
 	    else
-		printf("   %5.5s", "?");
+		wprintw(new, "   %5.5s", "?");
 	}
 	if (info.freemem >= 0)
-	    printf(" %9.3f", info.freemem);
+	    wprintw(new, " %9.3f", info.freemem);
 	else
-	    printf(" %9.9s", "?");
+	    wprintw(new, " %9.9s", "?");
 	if (info.dkiops >= 0)
-	    printf(" %6d", info.dkiops);
+	    wprintw(new, " %6d", info.dkiops);
 	else
-	    printf(" %6.6s", "?");
+	    wprintw(new, " %6.6s", "?");
 	if (info.load1 >= 0)
-	    printf("  %7.2f", info.load1);
+	    wprintw(new, "  %7.2f", info.load1);
 	else
-	    printf("  %7.7s", "?");
+	    wprintw(new, "  %7.7s", "?");
 	if (info.load15 >= 0)
-	    printf("  %7.2f\n", info.load15);
+	    wprintw(new, "  %7.2f\n", info.load15);
 	else
-	    printf("  %7.7s\n", "?");
+	    wprintw(new, "  %7.7s\n", "?");
  	lines++;
+	wrefresh(new);
     }
+    endwin();
     exit(0);
 }
