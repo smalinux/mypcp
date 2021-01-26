@@ -1,3 +1,33 @@
+/*
+                   ..                                       
+                 .://-                                      
+               .//://`         `                            
+             `:/:`:/-        .//:-.                  `--:::`
+            .//- .//`      .////////:-`     `     ``://///. 
+           -//.  :/-       `////////////:--://::::///////`  
+          :/:`  `//`    ..` -/////////////////////////:-`   
+         :/:    -/:    .////://////////////////////:-`      
+        :/:     //.  `.-/////////////////////////-`         
+       -//`    .//   .//////////////////////////-           
+      `//.     -/:    `:///////////////////////-            
+      :/:      :/.      -://////////////////:.`             
+     `//`     `//` `.-::- :////////////////.                
+     :/:      .//-:/:-..``-///////////////`                 
+    .//`      -///-`     -//////:////////`                  
+   `//:        ``        ://///.`///////`                   
+   ://.                 `////-   //////`                    
+  .///                  .//-     -////`                     
+  ://:                  --`      `--`                       
+ `///.                                                      
+ -///                                                       
+ ://:                                                       
+ ///-                                                       
+.///.                                                       
+-///.                                                       
+////-                                                       
+:///-                                                       
+ .--`                                                       
+*/
 #include "ncurses.h"
 #include "pmapi.h"
 #include "libpcp.h"
@@ -405,8 +435,10 @@ main(int argc, char **argv)
     pmDesc	mydesc;
     char	*buf;
     int 	err;
-    int numm;
-    int i;
+    int 	numm;
+    int 	i;
+    int 	ipmLIDm;
+    char 	*str_ver;
 
 	numm = sizeof(sohaib_cpu) / sizeof(char *);
 	pmid = (pmID *)malloc(numm * sizeof(pmid[0]));
@@ -416,7 +448,20 @@ main(int argc, char **argv)
 	    pmLookupDesc(pmid[i], &desc[i]);
 	    err = pmNameInDom(desc[0].indom, 1, &buf);
 	    printf("9999999999999999 pmNameInDom: %s\n", buf);
+	    ipmLIDm = pmLookupInDom(desc[0].indom, "cpu3");
+	    printf("pmLookupInDom: %d\n", ipmLIDm);
 	}
+
+    
+    /*
+     * Start pmGetConfig
+     */
+	str_ver = pmGetConfig("PCP_VERSION");
+	printf("pmGetConfig: %d\n", str_ver);
+
+    /*
+     * End pmGetConfig
+     */
 
 
 
