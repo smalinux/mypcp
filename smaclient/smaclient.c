@@ -33,6 +33,7 @@
 #include "libpcp.h"
 #include "pmnsmap.h"
 
+/* ncurses functions */
 void draw_borders(WINDOW *screen);
 
 int
@@ -45,9 +46,14 @@ main(int argc, char **argv)
     int 		score_size = 3;
 
     initscr();
+    start_color();
+    init_pair(2, COLOR_RED, COLOR_BLACK);
+    init_pair(1, COLOR_BLUE, COLOR_WHITE);
+    wbkgd(new, COLOR_PAIR(2));
+    bkgd(COLOR_PAIR(2));
     //logo = newwin(0, 0, 400, 400);
     scrollok(new, TRUE);
-    scrollok(logo, TRUE);
+    //scrollok(logo, TRUE);
     curs_set(FALSE);
 
     getmaxyx(stdscr, parent_y, parent_x);
@@ -65,6 +71,8 @@ main(int argc, char **argv)
         if ( new_y != parent_y || new_x != parent_x ) {
             parent_x = new_x;
             parent_y = new_y;
+
+            
 
             wresize(new, new_y - score_size, new_x);
             wresize(logo, score_size, new_x);
@@ -84,8 +92,23 @@ main(int argc, char **argv)
         mvwprintw(new, 2, 0, " Util");
         wprintw(new, "   CPU    Util");
         wprintw(new, "  (Mbytes)   IOPS    1 Min  15 Min\n");
+        wprintw(new, "Hello\n");
+        
+        char *cs = "Value";
+        mvwprintw(logo, 1, 1, "Name: ");
+        wattron(logo, COLOR_PAIR(1));
+        mvwprintw(logo, 1, 10, "%s", cs);
+        wattroff(logo, COLOR_PAIR(1));
 
-        mvwprintw(logo, 1, 1, "field");
+        mvwprintw(logo, 1, 20, "Name: ");
+        wattron(logo, COLOR_PAIR(1));
+        mvwprintw(logo, 1, 30, "%s", cs);
+        wattroff(logo, COLOR_PAIR(1));
+
+        mvwprintw(logo, 1, 40, "Name: ");
+        wattron(logo, COLOR_PAIR(1));
+        mvwprintw(logo, 1, 50, "%s", cs);
+        wattroff(logo, COLOR_PAIR(1));
 
         /*  refresh all windows */
         wrefresh(new);
