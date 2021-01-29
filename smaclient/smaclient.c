@@ -51,9 +51,6 @@ main(int argc, char **argv)
     init_pair(1, COLOR_BLUE, COLOR_WHITE);
     wbkgd(new, COLOR_PAIR(2));
     bkgd(COLOR_PAIR(2));
-    //logo = newwin(0, 0, 400, 400);
-    scrollok(new, TRUE);
-    //scrollok(logo, TRUE);
     curs_set(FALSE);
 
     getmaxyx(stdscr, parent_y, parent_x);
@@ -86,76 +83,25 @@ main(int argc, char **argv)
         }
 
         /* Start drawing after this line */
-        mvwprintw(new, 1, 0, "  CPU");
-        wprintw(new, "  Busy    Busy");
-        wprintw(new, "  Free Mem   Disk     Load Average\n");
-        mvwprintw(new, 2, 0, " Util");
-        wprintw(new, "   CPU    Util");
-        wprintw(new, "  (Mbytes)   IOPS    1 Min  15 Min\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
-        wprintw(new, "Hello\n");
+        mvwprintw(new, 1, 1, "  Title :"); // FIXME: I will merge this line and next line
+        wprintw(new, "Value 1\n");
         
+        mvwprintw(new, 2, 1, "  Title :"); // FIXME: I will merge this line and next line
+        wprintw(new, "Value 1\n");
+        
+        mvwprintw(new, 3, 1, "  Title :"); // FIXME: I will merge this line and next line
+        wprintw(new, "Value 1\n");
+        
+        mvwprintw(new, 4, 1, "Title :"); // FIXME: I will merge this line and next line
+        wprintw(new, "Value 1\n");
+        
+        mvwprintw(new, 6, 1, "  Title :"); // FIXME: I will merge this line and next line
+        wprintw(new, "Value 1\n");
+        
+        
+
+
+        /* logo bar */
         char *cs = "Value";
         mvwprintw(logo, 1, 1, "Name: ");
         wattron(logo, COLOR_PAIR(1));
