@@ -1,18 +1,12 @@
-pmclient_init {
-    hinv.ncpu			NUMCPU
+smaclient_init {
     kernel.uname.release        RELEASE
     kernel.uname.version        VERSION
     kernel.uname.sysname        SYSNAME
     kernel.uname.machine        MACHINE
     kernel.uname.distro         DISTRO
-
+    hinv.ncpu			NUMCPU
 }
 
-pmclient_sample {
-    kernel.all.load	LOADAV
-    kernel.percpu.cpu.user	CPU_USR
-    kernel.percpu.cpu.sys	CPU_SYS
-    mem.freemem		FREEMEM
-    disk.all.total		DKIOPS
+smaclient_sample {
     proc.psinfo.rss     MEMRSS
 }
