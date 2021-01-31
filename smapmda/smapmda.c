@@ -36,6 +36,8 @@
  *  4. Support the rest of pmdaInteface function pointers.
  *  5. How I could print to stdout of debugging?
  *  6. Read & Study more glibc and sysprogramming header files..
+ *  7. look at impl of:
+ *      proc.fd.count - proc.nprocs - 
  *
  */
 
