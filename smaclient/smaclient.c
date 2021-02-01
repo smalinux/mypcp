@@ -104,6 +104,7 @@ static char        *sma_version;
 static char        *sma_sysname;
 static char        *sma_machine;
 static char        *sma_distro;
+static int        test_g;
 
 /* ncurses functions */
 void draw_borders(WINDOW *screen);
@@ -180,14 +181,14 @@ general_info(void)
     } else {
         /* load average ... process all values, matching up the instances */
         pmExtractValue(srp->vset[RELEASE]->valfmt,
-                &srp->vset[RELEASE]->vlist[i],
+                &srp->vset[RELEASE]->vlist[0],
                 desclist_g[RELEASE].type, &atom, PM_TYPE_STRING);
         sma_release = (char *) malloc(strlen(atom.cp));
         strcpy(sma_release, atom.cp);
         free(atom.cp);
 
         pmExtractValue(srp->vset[VERSION]->valfmt,
-                &srp->vset[VERSION]->vlist[i],
+                &srp->vset[VERSION]->vlist[0],
                 desclist_g[VERSION].type, &atom, PM_TYPE_STRING);
         sma_version = (char *)malloc(strlen(atom.cp));
         strcpy(sma_version, atom.cp);
@@ -198,26 +199,26 @@ general_info(void)
          * why? I don't know =( ,,, I'll debug It later...
          *****************************************************************/
 
-        ///pmExtractValue(srp->vset[SYSNAME]->valfmt,
-                ///&srp->vset[SYSNAME]->vlist[i],
-                ///desclist_g[SYSNAME].type, &atom, PM_TYPE_STRING);
-        ///sma_sysname = (char *)malloc(strlen(atom.cp));
-        ///strcpy(sma_sysname, atom.cp);
-        ///free(atom.cp);
-///
-        ///pmExtractValue(srp->vset[MACHINE]->valfmt,
-                ///&srp->vset[MACHINE]->vlist[i],
-                ///desclist_g[MACHINE].type, &atom, PM_TYPE_STRING);
-        ///sma_machine = (char *)malloc(strlen(atom.cp));
-        ///strcpy(sma_machine, atom.cp);
-        ///free(atom.cp);
-///
-        ///pmExtractValue(srp->vset[DISTRO]->valfmt,
-                ///&srp->vset[DISTRO]->vlist[i],
-                ///desclist_g[DISTRO].type, &atom, PM_TYPE_STRING);
-        ///sma_distro = (char *)malloc(strlen(atom.cp));
-        ///strcpy(sma_distro, atom.cp);
-        ///free(atom.cp);
+        pmExtractValue(srp->vset[SYSNAME]->valfmt,
+                &srp->vset[SYSNAME]->vlist[0],
+                desclist_g[SYSNAME].type, &atom, PM_TYPE_STRING);
+        sma_sysname = (char *)malloc(strlen(atom.cp));
+        strcpy(sma_sysname, atom.cp);
+        free(atom.cp);
+
+        pmExtractValue(srp->vset[MACHINE]->valfmt,
+                &srp->vset[MACHINE]->vlist[0],
+                desclist_g[MACHINE].type, &atom, PM_TYPE_STRING);
+        sma_machine = (char *)malloc(strlen(atom.cp));
+        strcpy(sma_machine, atom.cp);
+        free(atom.cp);
+
+        pmExtractValue(srp->vset[DISTRO]->valfmt,
+                &srp->vset[DISTRO]->vlist[0],
+                desclist_g[DISTRO].type, &atom, PM_TYPE_STRING);
+        sma_distro = (char *)malloc(strlen(atom.cp));
+        strcpy(sma_distro, atom.cp);
+        free(atom.cp);
 
     }
     /* free very old result */
@@ -406,6 +407,7 @@ main(int argc, char **argv)
         mvwprintw(new, 0, 16, "Physical Mem       ");
         mvwprintw(new, 0, 32, "COMM");
         wprintw(new, "  test = %d", info.test);
+        wprintw(new, "  test_g = %d", test_g);
 
         ///if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
            ///__pmtimevalSleep(opts.interval);
@@ -449,7 +451,7 @@ main(int argc, char **argv)
 
         wprintw(logo, " SYSNAME: ");
         wattron(logo, COLOR_PAIR(1));
-        wprintw(logo, "%s ", sma_sysname);
+        ///wprintw(logo, "%s ", sma_sysname);
         wattroff(logo, COLOR_PAIR(1));
 
         wprintw(logo, " MACHINE: ");
