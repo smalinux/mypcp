@@ -50,16 +50,6 @@
  *      but it's really complex ))
  *      pcp/src/atop/atopsar.c
  *
- * 2. Trivial issue. I think. I will solve it later.
- *      When I try to fetch data from use pmextractevalue() with kernel.uname
- *      It works with:
- *          kernel.uname.release
- *          kernel.uname.version
- *      I get Segmentation fault with:
- *          kernel.uname.sysname
- *          kernel.uname.machine
- *          kernel.uname.distro
- *
  * What's Next?
  * ============
  * 1. Reslove all FIXME tags. // double slash comments & /// comments
@@ -193,11 +183,6 @@ general_info(void)
         sma_version = (char *)malloc(strlen(atom.cp));
         strcpy(sma_version, atom.cp);
         free(atom.cp);
-
-        /* FIXME *********************************************************
-         * Uncomment these lines to get Segmentation fault (core dumped)
-         * why? I don't know =( ,,, I'll debug It later...
-         *****************************************************************/
 
         pmExtractValue(srp->vset[SYSNAME]->valfmt,
                 &srp->vset[SYSNAME]->vlist[0],
