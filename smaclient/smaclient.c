@@ -95,7 +95,7 @@ pmOptions opts = {
 typedef struct {
     int         memrss[numfetchs];
     int         instaid[numfetchs];
-    int         xxx;
+    int         test;
 
 } info_t;
 
@@ -280,6 +280,7 @@ get_sample(info_t *ip)
         pmExtractValue(crp->vset[MEMRSS]->valfmt, &crp->vset[MEMRSS]->vlist[i], desclist[MEMRSS].type, &atom, PM_TYPE_U64);
         ip->memrss[i]       = atom.ul; 
         ip->instaid[i]      = crp->vset[MEMRSS]->vlist[i].inst;
+        ip->instaid[i]      = crp->vset[MEMRSS]->vlist[i].inst;
     }
     /* free very old result */
     pmFreeResult(crp);
@@ -404,7 +405,7 @@ main(int argc, char **argv)
         mvwprintw(new, 0, 1, "[PID]");
         mvwprintw(new, 0, 16, "Physical Mem       ");
         mvwprintw(new, 0, 32, "COMM");
-        wprintw(new, "xxx = %d", info.xxx);
+        wprintw(new, "  test = %d", info.test);
 
         ///if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
            ///__pmtimevalSleep(opts.interval);
