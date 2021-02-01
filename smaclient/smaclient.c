@@ -436,7 +436,7 @@ main(int argc, char **argv)
 
         wprintw(logo, " SYSNAME: ");
         wattron(logo, COLOR_PAIR(1));
-        ///wprintw(logo, "%s ", sma_sysname);
+        wprintw(logo, "%s ", sma_sysname);
         wattroff(logo, COLOR_PAIR(1));
 
         wprintw(logo, " MACHINE: ");
