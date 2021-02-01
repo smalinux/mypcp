@@ -85,6 +85,7 @@ pmOptions opts = {
 typedef struct {
     int         memrss[numfetchs];
     int         instaid[numfetchs];
+    char        *instname[numfetchs];
     int         test;
 
 } info_t;
@@ -96,11 +97,18 @@ static char        *sma_machine;
 static char        *sma_distro;
 static int        test_g;
 
+static pmInDom		icache_nameindom = PM_INDOM_NULL;
+static int		icache_numinst = -1;
+static int		*icache_instlist;
+static char		**icache_namelist;
+
 /* ncurses functions */
 void draw_borders(WINDOW *screen);
 /* comparison function for qsort() */
 static int comp(const void *a, const void *b);
 void mypmSortInstances(pmResult *rp);
+static char *lookup_instance_name(pmInDom indom, int inst);
+static void icache_update_name(pmInDom indom);
 
 
 static void
@@ -260,13 +268,13 @@ get_sample(info_t *ip)
     }
 
     // FIXME: sort algorithm not work as I expected
-   ///mypmSortInstances(crp); 
+   mypmSortInstances(crp); 
 
     for(i = 0; i < numfetchs; i++) { 
         pmExtractValue(crp->vset[MEMRSS]->valfmt, &crp->vset[MEMRSS]->vlist[i], desclist[MEMRSS].type, &atom, PM_TYPE_U64);
         ip->memrss[i]       = atom.ul; 
         ip->instaid[i]      = crp->vset[MEMRSS]->vlist[i].inst;
-        ip->instaid[i]      = crp->vset[MEMRSS]->vlist[i].inst;
+        ip->instname[i]     = lookup_instance_name(desclist[MEMRSS].indom, crp->vset[MEMRSS]->vlist[i].inst);
     }
     /* free very old result */
     pmFreeResult(crp);
@@ -419,7 +427,7 @@ main(int argc, char **argv)
         for(i = titlerows; i < new_y - score_size; i++) { 
             mvwprintw(new, i, 1, "[%d]  ", info.instaid[i]);
             mvwprintw(new, i, 16, "%d ", info.memrss[i]);
-            mvwprintw(new, i, 32, "%s", "/placeholder/placeholder"); // external inst
+            mvwprintw(new, i, 32, "%s", info.instname[i]); // external inst
         }
 
         /* FIXME: lots of reaundant funcions, optimize that later
@@ -503,4 +511,30 @@ mypmSortInstances(pmResult *rp)
             qsort(rp->vset[i]->vlist, rp->vset[i]->numval, sizeof(pmValue), comp);
         }
     }
+}
+
+
+static void
+icache_update_name(pmInDom indom)
+{
+    if (indom == icache_nameindom)
+        return;
+    if (icache_numinst > 0) {
+        free(icache_instlist);
+        free(icache_namelist);
+    }
+    icache_numinst = pmGetInDom(indom, &icache_instlist, &icache_namelist);
+    icache_nameindom = indom;
+}
+
+static char *
+lookup_instance_name(pmInDom indom, int inst)
+{
+    int			i;
+
+    icache_update_name(indom);
+    for (i = 0; i < icache_numinst; i++)
+        if (icache_instlist[i] == inst)
+            return icache_namelist[i];
+    return NULL;
 }
