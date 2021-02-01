@@ -95,6 +95,7 @@ pmOptions opts = {
 typedef struct {
     int         memrss[numfetchs];
     int         instaid[numfetchs];
+    int         xxx;
 
 } info_t;
 
@@ -107,7 +108,9 @@ static char        *sma_distro;
 /* ncurses functions */
 void draw_borders(WINDOW *screen);
 /* comparison function for qsort() */
-int cmpfunc(const void *a, const void *b);
+static int comp(const void *a, const void *b);
+void mypmSortInstances(pmResult *rp);
+
 
 static void
 general_info(void)
@@ -271,22 +274,12 @@ get_sample(info_t *ip)
     }
 
     // FIXME: sort algorithm not work as I expected
-    for(i = 0; i < crp->numpmid; i++) {
-        if( crp->vset[i]->numval > 1)
-            qsort(crp->vset[MEMRSS]->vlist, crp->vset[i]->numval, sizeof(pmValue), cmpfunc);
-    }
+   ///mypmSortInstances(crp); 
 
-    // FIXME: i want numval here dynamic - get num rows from ncurses ,, 
-    //for(i = 0; i < crp->vset[MEMRSS]->numval; i++) {
     for(i = 0; i < numfetchs; i++) { 
         pmExtractValue(crp->vset[MEMRSS]->valfmt, &crp->vset[MEMRSS]->vlist[i], desclist[MEMRSS].type, &atom, PM_TYPE_U64);
-        //printf("valfmt: %d\n", crp->vset[MEMRSS]->valfmt); // valfmt == 3
-        //printf("deslist[MEMRSS].type: %d \n", desclist[MEMRSS].type); // pmDesc.type == 3
-        //printf("inst: %d value: %" PRIu64 "\n", crp->vset[MEMRSS]->vlist[i].inst, atom.ull);
-
-        // I couldn't print the value without pmExtractVlaue ,, crp->vset[MEMRSS]->vlist[i]->value.pval->vbuf[0] ?? wrong!
-        ip->memrss[i]   = atom.ul; 
-        ip->instaid[i]     = desclist[MEMRSS].indom;
+        ip->memrss[i]       = atom.ul; 
+        ip->instaid[i]      = crp->vset[MEMRSS]->vlist[i].inst;
     }
     /* free very old result */
     pmFreeResult(crp);
@@ -408,9 +401,10 @@ main(int argc, char **argv)
            [PID]        Physical Mem    COMM
            [XXXXX]      XXXXXXX         /XXX/XXX/XXXXXX/XXXX/XX/XXXXX
            */
-        mvwprintw(new, 0, 1, "[PID]      ");
-        wprintw(new, "Physical Mem       ");
-        wprintw(new, "COMM       ");
+        mvwprintw(new, 0, 1, "[PID]");
+        mvwprintw(new, 0, 16, "Physical Mem       ");
+        mvwprintw(new, 0, 32, "COMM");
+        wprintw(new, "xxx = %d", info.xxx);
 
         ///if (opts.context != PM_CONTEXT_ARCHIVE || pauseFlag)
            ///__pmtimevalSleep(opts.interval);
@@ -435,10 +429,9 @@ main(int argc, char **argv)
         /* claculate of screen rows capcaity and
          * fill the window according to this number */
         for(i = titlerows; i < new_y - score_size; i++) { 
-            mvwprintw(new, i, 1, "%s ", "indom: ");
-            wprintw(new, "%d ", info.memrss[i]);
-            wprintw(new, "ID = [%d]  ", info.instaid[i]);
-            //wprintw(new, "Internal = %d XXX = %s", *b[i], "label");
+            mvwprintw(new, i, 1, "[%d]  ", info.instaid[i]);
+            mvwprintw(new, i, 16, "%d ", info.memrss[i]);
+            mvwprintw(new, i, 32, "%s", "/placeholder/placeholder"); // external inst
         }
 
         /* FIXME: lots of reaundant funcions, optimize that later
@@ -502,19 +495,24 @@ draw_borders(WINDOW *screen)
     }
 }
 
-/*
-* FIXME: logical problem, I read the impl of pmSortInstances,
-* it is too easy to sort by instances because integers for granted,
-* If I'm not should of  the type of value,, 
-*/
-int
-cmpfunc(const void *a, const void *b)
-{
-    pmValue *ap = (pmValue *)a;
-    pmValue *bp = (pmValue *)b;
 
-    //return ap->value.lval - ap->value.lval;
-    //return ap->value.pval->*vbuf - bp->value.pval->*vbuf;
-    //return ap->value.pval->&vbuf - bp->value.pval->&vbuf;
-    return ap->value.pval->vbuf[0] - bp->value.pval->vbuf[0];
+static int
+comp(const void *a, const void *b)
+{
+    pmValue	*ap = (pmValue *)a;
+    pmValue	*bp = (pmValue *)b;
+
+    return bp->inst - ap->inst;
+}
+
+void
+mypmSortInstances(pmResult *rp)
+{
+    int		i;
+
+    for (i = 0; i < rp->numpmid; i++) {
+        if (rp->vset[i]->numval > 1) {
+            qsort(rp->vset[i]->vlist, rp->vset[i]->numval, sizeof(pmValue), comp);
+        }
+    }
 }
