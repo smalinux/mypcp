@@ -69,7 +69,7 @@ static pmdaIndom indomtab[] = {
 static pmdaMetric metrictab[] = {
     /* mem.total */
     { NULL, 
-        { PMDA_PMID(1,3), PM_TYPE_U32, PM_INDOM_NULL, PM_SEM_INSTANT, 
+        { PMDA_PMID(1,3), PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_INSTANT, 
             PMDA_PMUNITS(0, 0, 0, 0, 0, 0) } },
     /* mem.free */
     { NULL, 
@@ -126,11 +126,13 @@ smapmda_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
 {
     unsigned int	cluster = pmID_cluster(mdesc->m_desc.pmid);
     unsigned int	item = pmID_item(mdesc->m_desc.pmid);
-    FILE            *f = fopen("/proc/meminfo", "r");
+    FILE            *f; 
     FILE            *k = fopen("/sys/kernel/debug/sma_debugfs/sma_u8", "r");
     int             unused;
     static int             kk = 4;
     char            comm[50];
+    char            *p, name[1024];
+    static char     *totalmem;
 
     /* FIXME: Add validation here. */
 
@@ -155,9 +157,21 @@ smapmda_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
                 return PM_ERR_INST;
         }
     } else if (cluster == 1 && item == 3) {     /* smapmda.mem.total */
-        fscanf(f, "%s %d", comm, &unused);
-        atom->ul = unused;
-        fclose(f);
+        f   = fopen("/proc/meminfo", "r");
+        if(f != NULL) {
+            while (fgets(name, sizeof(name), f)) {
+                if (strncmp(name, "MemTotal", 8) == 0) {
+                    if ((p = strstr(name, " kB")) != NULL)
+                        totalmem = strndup(p+1, 8);
+                    break;
+                }
+            }
+            atom->cp = totalmem;
+            fclose(f);
+        }
+        //
+        ///fscanf(f, "%s %d", comm, &unused);
+        ///atom->ul = unused;
     } else if (cluster == 1 && item == 4) {     /* smapmda.mem.free */
         /* Bad algoritm,, */
         atom->ul = 555; // FIXME: placeholder,,
@@ -303,10 +317,10 @@ smapmda_init(pmdaInterface *dp)
     if (dp->status != 0)
         return;
 
-    dp->version.any.instance = smapmda_fetch;
-    dp->version.any.store = smapmda_store;
-    dp->version.any.instance = smapmda_instance;
-    dp->version.seven.label = simple_label; // FIXME
+    ///dp->version.any.instance = smapmda_fetch;
+    ///dp->version.any.store = smapmda_store;
+    ///dp->version.any.instance = smapmda_instance;
+    ///dp->version.seven.label = simple_label; // FIXME
 
     pmdaSetFetchCallBack(dp, smapmda_fetchCallBack);
     pmdaSetLabelCallBack(dp, simple_labelCallBack); // FIXME
