@@ -1,0 +1,120 @@
+From e874afd9589b952af78e48059d8ddf84ca862748 Mon Sep 17 00:00:00 2001
+From: Sohaib <sohaib.amhmd@gmail.com>
+Date: Sun, 7 Feb 2021 21:13:27 +0200
+Subject: [PATCH] SMA: init simple meter
+
+---
+ CRT.h            |  1 +
+ SmaMeter.c       | 45 +++++++++++++++++++++++++++++++++++++++++++++
+ SmaMeter.h       | 14 ++++++++++++++
+ linux/Platform.c |  2 ++
+ 4 files changed, 62 insertions(+)
+ create mode 100644 SmaMeter.c
+ create mode 100644 SmaMeter.h
+
+diff --git a/CRT.h b/CRT.h
+index e77ec3d..6c70eee 100644
+--- a/CRT.h
++++ b/CRT.h
+@@ -108,6 +108,7 @@ typedef enum ColorElements_ {
+    DATETIME,
+    HELP_BOLD,
+    HOSTNAME,
++   SMAHOSTNAME,
+    CPU_NICE,
+    CPU_NICE_TEXT,
+    CPU_NORMAL,
+diff --git a/SmaMeter.c b/SmaMeter.c
+new file mode 100644
+index 0000000..05ad17c
+--- /dev/null
++++ b/SmaMeter.c
+@@ -0,0 +1,45 @@
++/*
++htop - HostnameMeter.c
++(C) 2004-2011 Hisham H. Muhammad
++Released under the GNU GPLv2, see the COPYING file
++in the source distribution for its full text.
++*/
++
++#include "config.h" // IWYU pragma: keep
++
++#include "SmaMeter.h"
++
++#include <unistd.h>
++
++#include "CRT.h"
++#include "Object.h"
++
++
++static const int HostnameMeter_attributes[] = {
++   SMAHOSTNAME
++};
++
++static void HostnameMeter_updateValues(Meter* this, char* buffer, size_t size) {
++   (void) this;
++    char smaBuffer[] = "Sohaib Mohammed";
++
++   //gethostname(buffer, size - 1);
++   for(size_t i =0 ; i < size -1; i++)
++       buffer[i] = smaBuffer[i];
++}
++
++const MeterClass SmaMeter_class = {
++   .super = {
++      .extends = Class(Meter),
++      .delete = Meter_delete
++   },
++   .updateValues = HostnameMeter_updateValues,
++   .defaultMode = BAR_METERMODE,
++   .maxItems = 0,
++   .total = 100.0,
++   .attributes = HostnameMeter_attributes,
++   .description = "Sma description",
++   .name = "SmanHostname",
++   .uiName = "SmaUi",
++   .caption = "Sma caption ",
++};
+diff --git a/SmaMeter.h b/SmaMeter.h
+new file mode 100644
+index 0000000..9588aab
+--- /dev/null
++++ b/SmaMeter.h
+@@ -0,0 +1,14 @@
++#ifndef HEADER_SmaMeter
++#define HEADER_SmaMeter
++/*
++htop - HostnameMeter.h
++(C) 2004-2011 Hisham H. Muhammad
++Released under the GNU GPLv2, see the COPYING file
++in the source distribution for its full text.
++*/
++
++#include "Meter.h"
++
++extern const MeterClass SmaMeter_class;
++
++#endif
+diff --git a/linux/Platform.c b/linux/Platform.c
+index 80b276e..b4cc4b9 100644
+--- a/linux/Platform.c
++++ b/linux/Platform.c
+@@ -30,6 +30,7 @@ in the source distribution for its full text.
+ #include "DateTimeMeter.h"
+ #include "DiskIOMeter.h"
+ #include "HostnameMeter.h"
++#include "SmaMeter.h"
+ #include "HugePageMeter.h"
+ #include "IOPriority.h"
+ #include "IOPriorityPanel.h"
+@@ -167,6 +168,7 @@ const MeterClass* const Platform_meterTypes[] = {
+    &UptimeMeter_class,
+    &BatteryMeter_class,
+    &HostnameMeter_class,
++   &SmaMeter_class,
+    &AllCPUsMeter_class,
+    &AllCPUs2Meter_class,
+    &AllCPUs4Meter_class,
+-- 
+2.26.2
+

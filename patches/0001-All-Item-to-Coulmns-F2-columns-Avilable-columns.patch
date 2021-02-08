@@ -1,0 +1,43 @@
+From 6d975ebe49ab3a037e0e29e9403d52c337d9e106 Mon Sep 17 00:00:00 2001
+From: Sohaib <sohaib.amhmd@gmail.com>
+Date: Tue, 9 Feb 2021 00:01:59 +0200
+Subject: [PATCH] All Item to Coulmns F2 > columns >> Avilable columns
+Don't forget $make clean first
+
+---
+ src/pcp/htop/pcp/PCPProcess.c | 22 +++++++++++++---------
+ src/pcp/htop/pcp/PCPProcess.h |  6 +++++-
+ 2 files changed, 18 insertions(+), 10 deletions(-)
+
+diff --git a/src/pcp/htop/pcp/PCPProcess.c b/src/pcp/htop/pcp/PCPProcess.c
+index aa7d9abce..a4b5605d4 100644
+--- a/src/pcp/htop/pcp/PCPProcess.c
++++ b/src/pcp/htop/pcp/PCPProcess.c
+@@ -23,7 +23,7 @@ in the source distribution for its full text.
+ 
+ ProcessFieldData Process_fields[] = {
+    [SECATTR] = { .name = "SECATTR", .title = " Security Attribute ", .description = "Security attribute of the process (e.g. SELinux or AppArmor)", .flags = PROCESS_FLAG_LINUX_SECATTR, },
++   [SOHAIB] = { .name = "SOHA_NA", .title = " Sohaib title ", .description = "000000000000000000000000000000000000000Sohaib description", .flags = 0, },
++   [SOHAIB2] = { .name = "SOHA_NA 2", .title = " Sohaib title 2 ", .description = "000000000000000000000000000000000000000Sohaib description", .flags = 0, },
++   // SMA: KEEP THAT LAST ..................................................
+    [LAST_PROCESSFIELD] = { .name = "*** report bug! ***", .title = NULL, .description = NULL, .flags = 0, },
+ };
+ 
+diff --git a/src/pcp/htop/pcp/PCPProcess.h b/src/pcp/htop/pcp/PCPProcess.h
+index 56a2f95c2..11923d51e 100644
+--- a/src/pcp/htop/pcp/PCPProcess.h
++++ b/src/pcp/htop/pcp/PCPProcess.h
+@@ -78,7 +78,10 @@ typedef enum PCPProcessFields {
+    M_PSSWP = 121,
+    CTXT = 122,
+    SECATTR = 123,
+-   LAST_PROCESSFIELD = 124,
++   SOHAIB = 124,
++   SOHAIB2 = 125,
++   // SMA: DO NOT PUT ANY THING  AFTER .. KEEP THIS THE LAST
++   LAST_PROCESSFIELD = 126,
+ } PCPProcessField;
+ 
+-- 
+2.26.2
+

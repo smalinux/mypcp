@@ -1,0 +1,295 @@
+From e9eecbfa42b72a8cbdc76996f361c088647379d5 Mon Sep 17 00:00:00 2001
+From: Sohaib <sohaib.amhmd@gmail.com>
+Date: Mon, 8 Feb 2021 03:03:44 +0200
+Subject: [PATCH] SmaScreen: New screen generated form & acts like TraceScreen
+
+---
+ Action.c    |  19 +++++-
+ SmaScreen.c | 193 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ SmaScreen.h |  37 ++++++++++
+ 3 files changed, 248 insertions(+), 1 deletion(-)
+ create mode 100644 SmaScreen.c
+ create mode 100644 SmaScreen.h
+
+diff --git a/Action.c b/Action.c
+index c29a5bd..37de2a0 100644
+--- a/Action.c
++++ b/Action.c
+@@ -445,6 +445,22 @@ static Htop_Reaction actionStrace(State* st) {
+    return HTOP_REFRESH | HTOP_REDRAW_BAR;
+ }
+ 
++static Htop_Reaction actionSmaStrace(State* st) {
++   const Process* p = (Process*) Panel_getSelected((Panel*)st->mainPanel);
++   if (!p)
++      return HTOP_OK;
++
++   TraceScreen* ts = TraceScreen_new(p);
++   bool ok = TraceScreen_forkTracer(ts);
++   if (ok) {
++      InfoScreen_run((InfoScreen*)ts);
++   }
++   TraceScreen_delete((Object*)ts);
++   clear();
++   CRT_enableDelay();
++   return HTOP_REFRESH | HTOP_REDRAW_BAR;
++}
++
+ static Htop_Reaction actionTag(State* st) {
+    Process* p = (Process*) Panel_getSelected((Panel*)st->mainPanel);
+    if (!p)
+@@ -700,7 +716,8 @@ void Action_setBindings(Htop_Action* keys) {
+    keys['m'] = actionToggleMergedCommand;
+    keys['p'] = actionToggleProgramPath;
+    keys['q'] = actionQuit;
+-   keys['s'] = actionStrace;
++   //keys['s'] = actionStrace;
++   keys['s'] = actionSmaStrace;
+    keys['t'] = actionToggleTreeView;
+    keys['u'] = actionFilterByUser;
+    keys['w'] = actionShowCommandScreen;
+diff --git a/SmaScreen.c b/SmaScreen.c
+new file mode 100644
+index 0000000..a3640f8
+--- /dev/null
++++ b/SmaScreen.c
+@@ -0,0 +1,193 @@
++/*
++htop - TraceScreen.c
++(C) 2005-2006 Hisham H. Muhammad
++Released under the GNU GPLv2, see the COPYING file
++in the source distribution for its full text.
++*/
++
++#include "config.h" // IWYU pragma: keep
++
++#include "SmaScreen.h"
++
++#include <assert.h>
++#include <fcntl.h>
++#include <signal.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/select.h>
++#include <sys/time.h>
++#include <sys/wait.h>
++
++#include "CRT.h"
++#include "FunctionBar.h"
++#include "IncSet.h"
++#include "Panel.h"
++#include "ProvideCurses.h"
++#include "XUtils.h"
++
++
++static const char* const TraceScreenFunctions[] = {"Search ", "Filter ", "AutoScroll ", "Stop Tracing   ", "Done   ", NULL};
++
++static const char* const TraceScreenKeys[] = {"F3", "F4", "F8", "F9", "Esc"};
++
++static const int TraceScreenEvents[] = {KEY_F(3), KEY_F(4), KEY_F(8), KEY_F(9), 27};
++
++SmaScreen* SmaScreen_new(const Process* process) {
++   // This initializes all TraceScreen variables to "false" so only default = true ones need to be set below
++   SmaScreen* this = xCalloc(1, sizeof(SmaScreen));
++   Object_setClass(this, Class(SmaScreen));
++   this->tracing = true;
++   FunctionBar* fuBar = FunctionBar_new(TraceScreenFunctions, TraceScreenKeys, TraceScreenEvents);
++   CRT_disableDelay();
++   return (SmaScreen*) InfoScreen_init(&this->super, process, fuBar, LINES - 2, " ");
++}
++
++void SmaScreen_delete(Object* cast) {
++   SmaScreen* this = (SmaScreen*) cast;
++   if (this->child > 0) {
++      kill(this->child, SIGTERM);
++      waitpid(this->child, NULL, 0);
++   }
++
++   if (this->strace) {
++      fclose(this->strace);
++   }
++
++   CRT_enableDelay();
++   free(InfoScreen_done((InfoScreen*)this));
++}
++
++static void TraceScreen_draw(InfoScreen* this) {
++   InfoScreen_drawTitled(this, "Trace of process %d - %s", this->process->pid, Process_getCommand(this->process));
++}
++
++bool SmaScreen_forkTracer(SmaScreen* this) {
++   int fdpair[2] = {0, 0};
++
++   if (pipe(fdpair) == -1)
++      return false;
++
++   if (fcntl(fdpair[0], F_SETFL, O_NONBLOCK) < 0)
++      goto err;
++
++   if (fcntl(fdpair[1], F_SETFL, O_NONBLOCK) < 0)
++      goto err;
++
++   pid_t child = fork();
++   if (child == -1)
++      goto err;
++
++   if (child == 0) {
++      close(fdpair[0]);
++
++      dup2(fdpair[1], STDOUT_FILENO);
++      dup2(fdpair[1], STDERR_FILENO);
++      close(fdpair[1]);
++
++      CRT_dropPrivileges();
++
++      char buffer[32] = {0};
++      xSnprintf(buffer, sizeof(buffer), "%d", this->super.process->pid);
++      execlp("strace", "strace", "-T", "-tt", "-s", "512", "-p", buffer, NULL);
++
++      // Should never reach here, unless execlp fails ...
++      const char* message = "Could not execute 'strace'. Please make sure it is available in your $PATH.";
++      ssize_t written = write(STDERR_FILENO, message, strlen(message));
++      (void) written;
++
++      exit(127);
++   }
++
++   FILE* fd = fdopen(fdpair[0], "r");
++   if (!fd)
++      goto err;
++
++   close(fdpair[1]);
++
++   this->child = child;
++   this->strace = fd;
++   return true;
++
++err:
++   close(fdpair[1]);
++   close(fdpair[0]);
++   return false;
++}
++
++static void TraceScreen_updateTrace(InfoScreen* super) {
++   SmaScreen* this = (SmaScreen*) super;
++   char buffer[1025];
++
++   int fd_strace = fileno(this->strace);
++   assert(fd_strace != -1);
++
++   fd_set fds;
++   FD_ZERO(&fds);
++// FD_SET(STDIN_FILENO, &fds);
++   FD_SET(fd_strace, &fds);
++
++   struct timeval tv = { .tv_sec = 0, .tv_usec = 500 };
++   int ready = select(fd_strace + 1, &fds, NULL, NULL, &tv);
++
++   size_t nread = 0;
++   if (ready > 0 && FD_ISSET(fd_strace, &fds))
++      nread = fread(buffer, 1, sizeof(buffer) - 1, this->strace);
++
++   if (nread && this->tracing) {
++      const char* line = buffer;
++      buffer[nread] = '\0';
++      for (size_t i = 0; i < nread; i++) {
++         if (buffer[i] == '\n') {
++            buffer[i] = '\0';
++            if (this->contLine) {
++               InfoScreen_appendLine(&this->super, line);
++               this->contLine = false;
++            } else {
++               InfoScreen_addLine(&this->super, line);
++            }
++            line = buffer + i + 1;
++         }
++      }
++      if (line < buffer + nread) {
++         InfoScreen_addLine(&this->super, line);
++         buffer[nread] = '\0';
++         this->contLine = true;
++      }
++      if (this->follow) {
++         Panel_setSelected(this->super.display, Panel_size(this->super.display) - 1);
++      }
++   }
++}
++
++static bool TraceScreen_onKey(InfoScreen* super, int ch) {
++   SmaScreen* this = (SmaScreen*) super;
++   switch(ch) {
++      case 'f':
++      case KEY_F(8):
++         this->follow = !(this->follow);
++         if (this->follow)
++            Panel_setSelected(super->display, Panel_size(super->display)-1);
++         return true;
++      case 't':
++      case KEY_F(9):
++         this->tracing = !this->tracing;
++         FunctionBar_setLabel(super->display->defaultBar, KEY_F(9), this->tracing?"Stop Tracing   ":"Resume Tracing ");
++         InfoScreen_draw(this);
++         return true;
++   }
++   this->follow = false;
++   return false;
++}
++
++const InfoScreenClass SmaScreen_class = {
++   .super = {
++      .extends = Class(Object),
++      .delete = SmaScreen_delete
++   },
++   .draw = TraceScreen_draw,
++   .onErr = TraceScreen_updateTrace,
++   .onKey = TraceScreen_onKey,
++};
+diff --git a/SmaScreen.h b/SmaScreen.h
+new file mode 100644
+index 0000000..e8f1390
+--- /dev/null
++++ b/SmaScreen.h
+@@ -0,0 +1,37 @@
++#ifndef HEADER_SmaScreen
++#define HEADER_SmaScreen
++/*
++htop - TraceScreen.h
++(C) 2005-2006 Hisham H. Muhammad
++Released under the GNU GPLv2, see the COPYING file
++in the source distribution for its full text.
++*/
++
++#include <stdbool.h>
++#include <stdio.h>
++#include <sys/types.h>
++
++#include "InfoScreen.h"
++#include "Object.h"
++#include "Process.h"
++
++
++typedef struct TraceScreen_ {
++   InfoScreen super;
++   bool tracing;
++   pid_t child;
++   FILE* strace;
++   bool contLine;
++   bool follow;
++} SmaScreen;
++
++
++extern const InfoScreenClass SmaScreen_class;
++
++SmaScreen* SmaScreen_new(const Process* process);
++
++void SmaScreen_delete(Object* cast);
++
++bool SmaScreen_forkTracer(SmaScreen* this);
++
++#endif
+-- 
+2.26.2
+
