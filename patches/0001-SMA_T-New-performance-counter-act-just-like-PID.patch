@@ -1,0 +1,108 @@
+From c614a447d3fbc1a1b8bfb0544e9cbbe3d3340f2b Mon Sep 17 00:00:00 2001
+From: Sohaib <sohaib.amhmd@gmail.com>
+Date: Wed, 10 Feb 2021 02:55:26 +0200
+Subject: [PATCH] SMA_T: New performance counter act just like PID
+
+---
+ src/pcp/htop/Process.c        | 3 +++
+ src/pcp/htop/Process.h        | 2 ++
+ src/pcp/htop/pcp/PCPProcess.c | 3 ++-
+ src/pcp/htop/pcp/PCPProcess.h | 1 -
+ src/pcp/htop/pcp/Platform.c   | 2 +-
+ 5 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/pcp/htop/Process.c b/src/pcp/htop/Process.c
+index 0a954d493..d9c65d43e 100644
+--- a/src/pcp/htop/Process.c
++++ b/src/pcp/htop/Process.c
+@@ -340,6 +340,7 @@ void Process_writeField(const Process* this, RichString* str, ProcessField field
+    case NLWP: xSnprintf(buffer, n, "%4ld ", this->nlwp); break;
+    case PGRP: xSnprintf(buffer, n, Process_pidFormat, this->pgrp); break;
+    case PID: xSnprintf(buffer, n, Process_pidFormat, this->pid); break;
++   case SMA_T: xSnprintf(buffer, n, Process_pidFormat, this->pid); break;
+    case PPID: xSnprintf(buffer, n, Process_pidFormat, this->ppid); break;
+    case PRIORITY: {
+       if(this->priority <= -100)
+@@ -529,6 +530,8 @@ long Process_compare(const void* v1, const void* v2) {
+       return SPACESHIP_NUMBER(p1->pgrp, p2->pgrp);
+    case PID:
+       return SPACESHIP_NUMBER(p1->pid, p2->pid);
++   case SMA_T:
++      return SPACESHIP_NUMBER(p1->pid, p2->pid);
+    case PPID:
+       return SPACESHIP_NUMBER(p1->ppid, p2->ppid);
+    case PRIORITY:
+diff --git a/src/pcp/htop/Process.h b/src/pcp/htop/Process.h
+index 48e31b1db..3b2a81461 100644
+--- a/src/pcp/htop/Process.h
++++ b/src/pcp/htop/Process.h
+@@ -49,6 +49,7 @@ typedef enum ProcessFields {
+    NLWP = 51,
+    TGID = 52,
+    PERCENT_NORM_CPU = 53,
++   SMA_T = 54,
+ } ProcessField;
+ 
+ typedef struct ProcessPidColumn_ {
+@@ -66,6 +67,7 @@ typedef struct Process_ {
+ 
+    unsigned long long int time;
+    pid_t pid;
++   pid_t sma_t;
+    pid_t ppid;
+    pid_t tgid;
+    char* comm;  /* use Process_getCommand() for Command actually displayed */
+diff --git a/src/pcp/htop/pcp/PCPProcess.c b/src/pcp/htop/pcp/PCPProcess.c
+index a4b5605d4..1d9b2d9db 100644
+--- a/src/pcp/htop/pcp/PCPProcess.c
++++ b/src/pcp/htop/pcp/PCPProcess.c
+@@ -23,6 +23,7 @@ in the source distribution for its full text.
+ 
+ ProcessFieldData Process_fields[] = {
+    [0] = { .name = "", .title = NULL, .description = NULL, .flags = 0, },
++   [SMA_T] = { .name = "SMA_T", .title = " SMA_T ", .description = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", .flags = 0, },
+    [PID] = { .name = "xPID", .title = "    cPID ", .description = "xProcess/thread ID", .flags = 0, },
+    [COMM] = { .name = "Command", .title = "Command ", .description = "Command line", .flags = 0, },
+    [STATE] = { .name = "STATE", .title = "S ", .description = "Process state (S sleeping, R running, D disk, Z zombie, T traced, W paging, I idle)", .flags = 0, },
+@@ -97,12 +98,12 @@ ProcessFieldData Process_fields[] = {
+    [CTXT] = { .name = "2CTXT", .title = " 1CTXT ", .description = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx Context switches (incremental sum of voluntary_ctxt_switches and nonvoluntary_ctxt_switches)", .flags = PROCESS_FLAG_LINUX_CTXT, },
+    [SECATTR] = { .name = "SECATTR", .title = " Security Attribute ", .description = "Security attribute of the process (e.g. SELinux or AppArmor)", .flags = PROCESS_FLAG_LINUX_SECATTR, },
+    [SOHAIB] = { .name = "SOHA_NA", .title = " Sohaib title ", .description = "000000000000000000000000000000000000000Sohaib description", .flags = 0, },
+-   [SOHAIB2] = { .name = "SOHA_NA 2", .title = " Sohaib title 2 ", .description = "000000000000000000000000000000000000000Sohaib description", .flags = 0, },
+    // SMA: KEEP THAT LAST ..................................................
+    [LAST_PROCESSFIELD] = { .name = "*** report bug! ***", .title = NULL, .description = NULL, .flags = 0, },
+ };
+ 
+ ProcessPidColumn Process_pidColumns[] = {
++   { .id = SMA_T, .label = "SMA_T" },
+    { .id = PID, .label = "zPID" },
+    { .id = PPID, .label = "zPPID" },
+    { .id = TPGID, .label = "zTPGID" },
+diff --git a/src/pcp/htop/pcp/PCPProcess.h b/src/pcp/htop/pcp/PCPProcess.h
+index 11923d51e..d0e90a591 100644
+--- a/src/pcp/htop/pcp/PCPProcess.h
++++ b/src/pcp/htop/pcp/PCPProcess.h
+@@ -79,7 +79,6 @@ typedef enum PCPProcessFields {
+    CTXT = 122,
+    SECATTR = 123,
+    SOHAIB = 124,
+-   SOHAIB2 = 125,
+    // SMA: DO NOT PUT ANY THING  AFTER .. KEEP THIS THE LAST
+    LAST_PROCESSFIELD = 126,
+ } PCPProcessField;
+diff --git a/src/pcp/htop/pcp/Platform.c b/src/pcp/htop/pcp/Platform.c
+index de383a5f8..d78292aa2 100644
+--- a/src/pcp/htop/pcp/Platform.c
++++ b/src/pcp/htop/pcp/Platform.c
+@@ -54,7 +54,7 @@ typedef struct Platform_ {
+ 
+ Platform* pcp;
+ 
+-ProcessField Platform_defaultFields[] = { PID, USER, PRIORITY, NICE, M_VIRT, M_RESIDENT, (int)M_SHARE, STATE, PERCENT_CPU, PERCENT_MEM, TIME, COMM, 0 };
++ProcessField Platform_defaultFields[] = { PID, USER, PRIORITY, NICE, M_VIRT, M_RESIDENT, (int)M_SHARE, STATE, PERCENT_CPU, PERCENT_MEM, TIME, COMM, SMA_T, 0 };
+ 
+ int Platform_numberOfFields = LAST_PROCESSFIELD;
+ 
+-- 
+2.26.2
+
