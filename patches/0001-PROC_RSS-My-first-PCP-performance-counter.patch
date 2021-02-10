@@ -1,0 +1,109 @@
+From 783b11c4b0430520f05fbf3e9c5fc602cf4fa315 Mon Sep 17 00:00:00 2001
+From: Sohaib <sohaib.amhmd@gmail.com>
+Date: Wed, 10 Feb 2021 23:27:48 +0200
+Subject: [PATCH] PROC_RSS: My first PCP performance counter
+
+---
+ src/pcp/htop/pcp/PCPProcess.c     | 4 ++++
+ src/pcp/htop/pcp/PCPProcess.h     | 4 +++-
+ src/pcp/htop/pcp/PCPProcessList.c | 5 +++++
+ src/pcp/htop/pcp/Platform.c       | 1 +
+ src/pcp/htop/pcp/Platform.h       | 2 ++
+ 5 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/src/pcp/htop/pcp/PCPProcess.c b/src/pcp/htop/pcp/PCPProcess.c
+index a4b5605d4..c36abfcaa 100644
+--- a/src/pcp/htop/pcp/PCPProcess.c
++++ b/src/pcp/htop/pcp/PCPProcess.c
+@@ -68,6 +68,7 @@ ProcessFieldData Process_fields[] = {
+    [M_DRS] = { .name = "M_DRS", .title = " DATA ", .description = "Size of the data segment plus stack usage of the process", .flags = 0, },
+    [M_LRS] = { .name = "M_LRS", .title = " LIB ", .description = "The library size of the process (unused since Linux 2.6; always 0)", .flags = 0, },
+    [M_DT] = { .name = "M_DT", .title = " DIRTY ", .description = "Size of the dirty pages of the process (unused since Linux 2.6; always 0)", .flags = 0, },
++   [M_RSS] = { .name = "M_RSS", .title = " RSS ", .description = "Resident set size (i.e. physical memory) of the process", .flags = 0, },
+    [ST_UID] = { .name = "ST_UID", .title = "  UID ", .description = "User ID of the process owner", .flags = 0, },
+    [PERCENT_CPU] = { .name = "PERCENT_CPU", .title = "CPU% ", .description = "Percentage of the CPU time the process used in the last sampling", .flags = 0, },
+    [PERCENT_NORM_CPU] = { .name = "PERCENT_NORM_CPU", .title = "NCPU%", .description = "Normalized percentage of the CPU time the process used in the last sampling (normalized by cpu count)", .flags = 0, },
+@@ -162,6 +163,7 @@ static void PCPProcess_writeField(const Process* this, RichString* str, ProcessF
+    case M_PSS: Process_humanNumber(str, lp->m_pss, coloring); return;
+    case M_SWAP: Process_humanNumber(str, lp->m_swap, coloring); return;
+    case M_PSSWP: Process_humanNumber(str, lp->m_psswp, coloring); return;
++   case M_RSS: Process_humanNumber(str, lp->m_rss, coloring); return;
+    case UTIME: Process_printTime(str, lp->utime); return;
+    case STIME: Process_printTime(str, lp->stime); return;
+    case CUTIME: Process_printTime(str, lp->cutime); return;
+@@ -242,6 +244,8 @@ static long PCPProcess_compare(const void* v1, const void* v2) {
+       return SPACESHIP_NUMBER(p2->m_swap, p1->m_swap);
+    case M_PSSWP:
+       return SPACESHIP_NUMBER(p2->m_psswp, p1->m_psswp);
++   case M_RSS:
++      return SPACESHIP_NUMBER(p2->m_rss, p1->m_rss);
+    case UTIME:
+       return SPACESHIP_NUMBER(p2->utime, p1->utime);
+    case CUTIME:
+diff --git a/src/pcp/htop/pcp/PCPProcess.h b/src/pcp/htop/pcp/PCPProcess.h
+index 11923d51e..e5d826fd8 100644
+--- a/src/pcp/htop/pcp/PCPProcess.h
++++ b/src/pcp/htop/pcp/PCPProcess.h
+@@ -80,8 +80,9 @@ typedef enum PCPProcessFields {
+    SECATTR = 123,
+    SOHAIB = 124,
+    SOHAIB2 = 125,
++   M_RSS = 126,
+    // SMA: DO NOT PUT ANY THING  AFTER .. KEEP THIS THE LAST
+-   LAST_PROCESSFIELD = 126,
++   LAST_PROCESSFIELD = 127,
+ } PCPProcessField;
+ 
+ typedef struct PCPProcess_ {
+@@ -101,6 +102,7 @@ typedef struct PCPProcess_ {
+    long m_drs;
+    long m_lrs;
+    long m_dt;
++   unsigned long long m_rss;
+    unsigned long long io_rchar;
+    unsigned long long io_wchar;
+    unsigned long long io_syscr;
+diff --git a/src/pcp/htop/pcp/PCPProcessList.c b/src/pcp/htop/pcp/PCPProcessList.c
+index 880897612..11d708af4 100644
+--- a/src/pcp/htop/pcp/PCPProcessList.c
++++ b/src/pcp/htop/pcp/PCPProcessList.c
+@@ -318,6 +318,11 @@ static void PCPProcessList_updateMemory(PCPProcess* process, int pid, int offset
+       process->m_dt = value.ul;
+    else
+       process->m_dt = 0;
++
++   if (Metric_instance(PCP_PROC_RSS, pid, offset, &value, PM_TYPE_U64))
++      process->m_rss = value.ul;
++   else
++      process->m_rss = 0;
+ }
+ 
+ static void PCPProcessList_updateSmaps(PCPProcess* process, pid_t pid, int offset) {
+diff --git a/src/pcp/htop/pcp/Platform.c b/src/pcp/htop/pcp/Platform.c
+index de383a5f8..e70ba5d1d 100644
+--- a/src/pcp/htop/pcp/Platform.c
++++ b/src/pcp/htop/pcp/Platform.c
+@@ -188,6 +188,7 @@ static const char *Platform_metricNames[] = {
+    [PCP_PROC_LABELS] = "proc.psinfo.labels",
+    [PCP_PROC_ENVIRON] = "proc.psinfo.environ",
+    [PCP_PROC_TTYNAME] = "proc.psinfo.ttyname",
++   [PCP_PROC_RSS] = "proc.psinfo.rss",
+    [PCP_PROC_ID_UID] = "proc.id.uid",
+    [PCP_PROC_ID_USER] = "proc.id.uid_nm",
+    [PCP_PROC_IO_RCHAR] = "proc.io.rchar",
+diff --git a/src/pcp/htop/pcp/Platform.h b/src/pcp/htop/pcp/Platform.h
+index affaea7c2..62d28e728 100644
+--- a/src/pcp/htop/pcp/Platform.h
++++ b/src/pcp/htop/pcp/Platform.h
+@@ -182,6 +182,8 @@ typedef enum Metric_ {
+    PCP_PROC_SMAPS_SWAP,		/* proc.smaps.swap */
+    PCP_PROC_SMAPS_SWAPPSS,	/* proc.smaps.swappss */
+ 
++   PCP_PROC_RSS,            /* proc.psinfo.rss */
++
+    PCP_METRIC_COUNT		/* total metric count */
+ } Metric;
+ 
+-- 
+2.26.2
+
