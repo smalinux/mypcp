@@ -1,0 +1,282 @@
+unchanged:
+--- a/src/pcp/htop/GNUmakefile
++++ b/src/pcp/htop/GNUmakefile
+@@ -65,6 +65,7 @@ CFILES = \
+ 	ScreenManager.c \
+ 	Settings.c \
+ 	SignalsPanel.c \
++	SysArchMeter.c \
+ 	SwapMeter.c \
+ 	TasksMeter.c \
+ 	TraceScreen.c \
+@@ -122,6 +123,7 @@ HFILES = \
+ 	ScreenManager.h \
+ 	Settings.h \
+ 	SignalsPanel.h \
++	SysArchMeter.h \
+ 	SwapMeter.h \
+ 	TasksMeter.h \
+ 	TraceScreen.h \
+unchanged:
+--- a/src/pcp/htop/ProcessList.h
++++ b/src/pcp/htop/ProcessList.h
+@@ -69,6 +69,10 @@ typedef struct ProcessList_ {
+    unsigned long long int usedSwap;
+    unsigned long long int freeSwap;
+ 
++   char* SysArchName;
++   char* SysArchRelease;
++   char* SysArchMachine;
++
+    int cpuCount;
+ 
+    time_t scanTs;
+unchanged:
+--- /dev/null
++++ b/src/pcp/htop/SysArchMeter.c
+@@ -0,0 +1,47 @@
++/*
++htop - SysArchMeter.c
++(C) 2021 htop dev team
++Released under the GNU GPLv2, see the COPYING file
++in the source distribution for its full text.
++*/
++#include "config.h"  // IWYU pragma: keep
++
++#include "SysArchMeter.h"
++
++#include <stdio.h>
++#include <string.h>
++#include <sys/utsname.h>
++
++#include "CRT.h"
++#include "Macros.h"
++#include "Object.h"
++#include "Platform.h"
++#include "RichString.h"
++#include "XUtils.h"
++
++static const int SysArchMeter_attributes[] = {HOSTNAME};
++
++static void SysArchMeter_updateValues(Meter* this, char* buffer, size_t size) {
++   Platform_setSysArch(this);
++
++
++    snprintf(buffer, size, "%s %s [%s]", 
++            this->SysArchName,
++            this->SysArchRelease,
++            this->SysArchMachine);
++}
++
++const MeterClass SysArchMeter_class = {
++   .super = {
++      .extends = Class(Meter),
++      .delete = Meter_delete
++   },
++   .updateValues = SysArchMeter_updateValues,
++   .defaultMode = TEXT_METERMODE,
++   .maxItems = 0,
++   .total = 100.0,
++   .attributes = SysArchMeter_attributes,
++   .name = "System",
++   .uiName = "System",
++   .caption = "System: ",
++};
+unchanged:
+--- /dev/null
++++ b/src/pcp/htop/SysArchMeter.h
+@@ -0,0 +1,14 @@
++#ifndef HEADER_SysArchMeter
++#define HEADER_SysArchMeter
++/*
++htop - SysArchMeter.h
++(C) 2021 htop dev team
++Released under the GNU GPLv2, see the COPYING file
++in the source distribution for its full text.
++*/
++#include "Meter.h"
++
++
++extern const MeterClass SysArchMeter_class;
++
++#endif
+diff -u b/src/pcp/htop/pcp/PCPProcessList.c b/src/pcp/htop/pcp/PCPProcessList.c
+--- b/src/pcp/htop/pcp/PCPProcessList.c
++++ b/src/pcp/htop/pcp/PCPProcessList.c
+@@ -679,6 +679,7 @@
+ 
+    if (settings->showCPUFrequency)
+       PCPProcessList_updatePerCPUReal(this, PCP_HINV_CPUCLOCK, CPU_FREQUENCY);
++
+ }
+ 
+ void ProcessList_goThroughEntries(ProcessList* super, bool pauseProcessUpdate) {
+diff -u b/src/pcp/htop/pcp/Platform.c b/src/pcp/htop/pcp/Platform.c
+--- b/src/pcp/htop/pcp/Platform.c
++++ b/src/pcp/htop/pcp/Platform.c
+@@ -12,6 +12,7 @@
+ 
+ #include <math.h>
+ 
++#include "SysArchMeter.h"
+ #include "BatteryMeter.h"
+ #include "ClockMeter.h"
+ #include "Compat.h"
+@@ -90,6 +91,7 @@
+    &LeftCPUs8Meter_class,
+    &RightCPUs8Meter_class,
+    &BlankMeter_class,
++   &SysArchMeter_class,
+    &PressureStallCPUSomeMeter_class,
+    &PressureStallIOSomeMeter_class,
+    &PressureStallIOFullMeter_class,
+@@ -209,6 +211,10 @@
+    [PCP_PROC_SMAPS_SWAP] = "proc.smaps.swap",
+    [PCP_PROC_SMAPS_SWAPPSS] = "proc.smaps.swappss",
+ 
++   [KERNEL_UNAME_SYSNAME] = "kernel.uname.sysname",
++   [KERNEL_UNAME_RELEASE] = "kernel.uname.release",
++   [KERNEL_UNAME_MACHINE] = "kernel.uname.machine",
++
+    [PCP_METRIC_COUNT] = NULL
+ };
+ 
+@@ -534,6 +540,20 @@
+    this->values[0] = pl->usedSwap;
+ }
+ 
++void Platform_setSysArch(SysArchInfo *data) {
++    int c = sizeof(SysArchInfo)/sizeof(char*);
++    pmAtomValue *values = xCalloc(c, sizeof(pmAtomValue));
++
++    if (Metric_values(KERNEL_UNAME_SYSNAME, &values[0], 1, PM_TYPE_STRING) != NULL)
++        data->name = values[0].cp;
++    if (Metric_values(KERNEL_UNAME_RELEASE, &values[1], 1, PM_TYPE_STRING) != NULL)
++        data->release = values[1].cp;
++    if (Metric_values(KERNEL_UNAME_MACHINE, &values[2], 1, PM_TYPE_STRING) != NULL)
++        data->machine = values[2].cp;
++
++    free(values);
++}
++
+ void Platform_setZramValues(Meter* this) {
+    (void)this;
+ 
+diff -u b/src/pcp/htop/pcp/Platform.h b/src/pcp/htop/pcp/Platform.h
+--- b/src/pcp/htop/pcp/Platform.h
++++ b/src/pcp/htop/pcp/Platform.h
+@@ -20,6 +20,7 @@
+ 
+ #include "Action.h"
+ #include "BatteryMeter.h"
++#include "SysArchMeter.h"
+ #include "DiskIOMeter.h"
+ #include "Meter.h"
+ #include "Process.h"
+@@ -55,4 +56,6 @@
+ void Platform_setSwapValues(Meter* this);
+ 
++void Platform_setSysArch(SysArchInfo* data);
++
+ void Platform_setZramValues(Meter* this);
+ 
+@@ -184,6 +187,10 @@
+ 
+    PCP_PROC_RSS,            /* proc.psinfo.rss */
+ 
++   KERNEL_UNAME_SYSNAME,    /* kernel.uname.sysname */
++   KERNEL_UNAME_RELEASE,    /* kernel.uname.release */
++   KERNEL_UNAME_MACHINE,    /* kernel.uname.machine */
++
+    PCP_METRIC_COUNT		/* total metric count */
+ } Metric;
+ 
+only in patch2:
+unchanged:
+--- a/src/pcp/htop/SysArchMeter.c
++++ b/src/pcp/htop/SysArchMeter.c
+@@ -8,10 +8,6 @@ in the source distribution for its full text.
+ 
+ #include "SysArchMeter.h"
+ 
+-#include <stdio.h>
+-#include <string.h>
+-#include <sys/utsname.h>
+-
+ #include "CRT.h"
+ #include "Macros.h"
+ #include "Object.h"
+@@ -21,27 +17,40 @@ in the source distribution for its full text.
+ 
+ static const int SysArchMeter_attributes[] = {HOSTNAME};
+ 
+-static void SysArchMeter_updateValues(Meter* this, char* buffer, size_t size) {
+-   Platform_setSysArch(this);
++ static void SysArchMeter_updateValues(Meter* this, char* buffer, size_t size) {
++    SysArchInfo data;
++    Platform_setSysArch(&data);
++
++    snprintf(buffer, size, "%s %s [%s]", data.name, data.release, data.machine);
++}
++
++static void SysArchMeter_display(ATTR_UNUSED const Object* cast, RichString* out) {
++    SysArchInfo data;
++    Platform_setSysArch(&data);
++    char buffer[50];
++
++    xSnprintf(buffer, sizeof(buffer), "%s ", data.name);
++    RichString_writeAscii(out, CRT_colors[METER_VALUE_NOTICE] , buffer);
+ 
++    xSnprintf(buffer, sizeof(buffer), "%s ", data.release);
++    RichString_appendAscii(out, CRT_colors[METER_VALUE_NOTICE], buffer);
+ 
+-    snprintf(buffer, size, "%s %s [%s]", 
+-            this->SysArchName,
+-            this->SysArchRelease,
+-            this->SysArchMachine);
++    xSnprintf(buffer, sizeof(buffer), "[%s]", data.machine);
++    RichString_appendAscii(out, CRT_colors[METER_VALUE_NOTICE], buffer);
+ }
+ 
+ const MeterClass SysArchMeter_class = {
+-   .super = {
+-      .extends = Class(Meter),
+-      .delete = Meter_delete
+-   },
+-   .updateValues = SysArchMeter_updateValues,
+-   .defaultMode = TEXT_METERMODE,
+-   .maxItems = 0,
+-   .total = 100.0,
+-   .attributes = SysArchMeter_attributes,
+-   .name = "System",
+-   .uiName = "System",
+-   .caption = "System: ",
++    .super = {
++        .extends = Class(Meter),
++        .delete = Meter_delete,
++        .display = SysArchMeter_display
++    },
++    .updateValues = SysArchMeter_updateValues,
++    .defaultMode = TEXT_METERMODE,
++    .maxItems = 0,
++    .total = 100.0,
++    .attributes = SysArchMeter_attributes,
++    .name = "System",
++    .uiName = "System",
++    .caption = "System: ",
+ };
+only in patch2:
+unchanged:
+--- a/src/pcp/htop/SysArchMeter.h
++++ b/src/pcp/htop/SysArchMeter.h
+@@ -11,4 +11,10 @@ in the source distribution for its full text.
+ 
+ extern const MeterClass SysArchMeter_class;
+ 
++typedef struct SysArchInfo_ {
++    char* name;
++    char* release;
++    char* machine;
++} SysArchInfo;
++
+ #endif
