@@ -1,0 +1,24 @@
+# zfs list            # list all ZFS datasets
+| NAME = dataset name (NOT MOUNTPOINT) poolName/datasetName/bla/bla
+| USED ~= everything! data & ZFS metadata (and snapshots, sharedata, etc..)
+| AVAIL -= size of pool
+| REFER ~= Size of actual data
+| MOUNTPOINT
+
+# zfs get quota zroot/var/log           # Properties of specific file system.
+# zfs get all         # list ALL datasets properties
+
+# zpool status
+
+
+# zpool status
+  pool: bpool
+ state: ONLINE
+  scan: none requested
+config:
+
+	NAME           STATE     READ WRITE CKSUM
+	bpool          ONLINE       0     0     0
+	  0bd2eb01-06  ONLINE       0     0     0
+    ^^^^^^^^^^^
+    VDEV name/s (AKA Virtual devices)
