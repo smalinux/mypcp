@@ -72,6 +72,8 @@ https://talk.openmrs.org/t/former-gsoc-students-what-are-your-proposal-tips/27
 https://jogendra.dev/how-to-write-proposal-for-google-summer-of-code  
 https://github.com/khancyr/GSOC-2017  
 https://www.jenkins.io/projects/gsoc/proposing-project-ideas/  
+https://forums.swift.org/t/my-gsoc-experience/45698  
+
 
 
 
