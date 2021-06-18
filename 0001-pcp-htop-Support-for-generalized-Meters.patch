@@ -1,0 +1,1187 @@
+From 676aea9d1d955c2643e2a00133a334e41bc4213b Mon Sep 17 00:00:00 2001
+From: Sohaib Mohamed <sohaib.amhmd@gmail.com>
+Date: Fri, 28 May 2021 17:05:58 +0200
+Subject: [PATCH] pcp-htop: Support for generalized Meters
+
+Allowing any metric to be displayed using htop rather than only the hard-coded set.
+
+One of the challenges we have with making pcp and htop work well together, is
+that pcp has thousands of metrics.
+And we encourage people to add their own metrics, so really its infinite metrics
+htop on the other hand has knowledge of a fixed set of metrics, and
+it cannot be extended yet without writing new code.
+
+What I did here is a generic Meter for any PCP metric.
+- i.e. not the way we're doing it currently, where we write new code each
+time we want to add a new Meter into htop.
+so, instead of writing code, imagine this...
+pcp-htop scans a new direcory /etc/pcp/htop/ at startup for
+configuration files (plain text)
+These files would specify new Meters - they would contain information
+like: pcp metric name, meter name, etc and they would be added into the
+existing set of meters that htop knows about, at startup.
+
+So most importantly, users would not have to add code for new Meters anymore.
+It also means the tool doesn't become larger and larger forever,
+as more and more people write their own Meters for their own critical metrics.
+(i.e. less code bloat)
+---
+ AvailableMetersPanel.c |  16 ++-
+ CRT.c                  |  44 +++++++-
+ CRT.h                  |   7 ++
+ Header.c               |  20 +++-
+ Makefile.am            |   2 +
+ Meter.c                |  11 +-
+ pcp/PCPPluginsMeter.c  | 189 ++++++++++++++++++++++++++++++++
+ pcp/PCPPluginsMeter.h  |   9 ++
+ pcp/Platform.c         | 240 ++++++++++++++++++++++++++++++++++++++++-
+ pcp/Platform.h         |  28 +++++
+ plugins/bufmem         |  12 +++
+ plugins/dirty          |  12 +++
+ plugins/disk           |  12 +++
+ plugins/distro         |  12 +++
+ plugins/mem            |  13 +++
+ plugins/net-raw        |  12 +++
+ plugins/network-in     |  12 +++
+ plugins/network-in2    |  12 +++
+ plugins/network-in3    |  12 +++
+ plugins/network-out    |  11 ++
+ plugins/packets-out    |  11 ++
+ plugins/shmem          |  11 ++
+ plugins/sys            |  12 +++
+ plugins/udp-active     |  12 +++
+ plugins/udp-listen     |  12 +++
+ plugins/zfssize        |  12 +++
+ 26 files changed, 747 insertions(+), 9 deletions(-)
+ create mode 100644 pcp/PCPPluginsMeter.c
+ create mode 100644 pcp/PCPPluginsMeter.h
+ create mode 100644 plugins/bufmem
+ create mode 100644 plugins/dirty
+ create mode 100644 plugins/disk
+ create mode 100644 plugins/distro
+ create mode 100644 plugins/mem
+ create mode 100644 plugins/net-raw
+ create mode 100644 plugins/network-in
+ create mode 100644 plugins/network-in2
+ create mode 100644 plugins/network-in3
+ create mode 100644 plugins/network-out
+ create mode 100644 plugins/packets-out
+ create mode 100644 plugins/shmem
+ create mode 100644 plugins/sys
+ create mode 100644 plugins/udp-active
+ create mode 100644 plugins/udp-listen
+ create mode 100644 plugins/zfssize
+
+diff --git a/AvailableMetersPanel.c b/AvailableMetersPanel.c
+index cb67c7f..48979f6 100644
+--- a/AvailableMetersPanel.c
++++ b/AvailableMetersPanel.c
+@@ -106,7 +106,8 @@ AvailableMetersPanel* AvailableMetersPanel_new(Settings* settings, Header* heade
+    Panel_setHeader(super, "Available meters");
+    // Platform_meterTypes[0] should be always (&CPUMeter_class), which we will
+    // handle separately in the code below.
+-   for (int i = 1; Platform_meterTypes[i]; i++) {
++   // also, Platform_meterTypes[1] should be always (&PCPPluginsMeter_class)
++   for (int i = 2; Platform_meterTypes[i]; i++) {
+       const MeterClass* type = Platform_meterTypes[i];
+       assert(type != &CPUMeter_class);
+       const char* label = type->description ? type->description : type->uiName;
+@@ -125,5 +126,18 @@ AvailableMetersPanel* AvailableMetersPanel_new(Settings* settings, Header* heade
+    } else {
+       Panel_add(super, (Object*) ListItem_new("CPU", 1));
+    }
++   // Handle (&PCPPluginMeter_class)
++   /*
++   int totalplugins = Platform_totalplugins();
++   if(totalplugins > 0) {
++      for (int i = 0; i < totalplugins; i++) {
++         char* uiName = Platform_plugin_uiName(i);
++         char* desc = Platform_plugin_description(i);
++         char buffer[200];
++         xSnprintf(buffer, sizeof(buffer), "PCP %s - %s", uiName, desc);
++         Panel_add(super, (Object*) ListItem_new(buffer, i));
++      }
++   }
++   */
+    return this;
+ }
+diff --git a/CRT.c b/CRT.c
+index 5353c7b..8168b3a 100644
+--- a/CRT.c
++++ b/CRT.c
+@@ -195,6 +195,13 @@ static int CRT_colorSchemes[LAST_COLORSCHEME][LAST_COLORELEMENT] = {
+       [ZFS_COMPRESSED] = ColorPair(Blue, Black),
+       [ZFS_RATIO] = ColorPair(Magenta, Black),
+       [ZRAM] = ColorPair(Yellow, Black),
++      [PLUGINS_BLUE] = ColorPair(Blue, Black),
++      [PLUGINS_RED] = ColorPair(Red, Black),
++      [PLUGINS_YELLOW] = ColorPair(Yellow, Black),
++      [PLUGINS_GREEN] = ColorPair(Green, Black),
++      [PLUGINS_CYAN] = ColorPair(Cyan, Black),
++      [PLUGINS_SHADOW] = A_BOLD | ColorPairGrayBlack,
++      [PLUGINS_LABEL] = ColorPair(Magenta, Black),
+    },
+    [COLORSCHEME_MONOCHROME] = {
+       [RESET_COLOR] = A_NORMAL,
+@@ -288,6 +295,13 @@ static int CRT_colorSchemes[LAST_COLORSCHEME][LAST_COLORELEMENT] = {
+       [ZFS_COMPRESSED] = A_BOLD,
+       [ZFS_RATIO] = A_BOLD,
+       [ZRAM] = A_NORMAL,
++      [PLUGINS_BLUE] = ColorPair(Blue, Black),
++      [PLUGINS_RED] = ColorPair(Red, Black),
++      [PLUGINS_YELLOW] = ColorPair(Yellow, Black),
++      [PLUGINS_GREEN] = ColorPair(Green, Black),
++      [PLUGINS_CYAN] = ColorPair(Cyan, Black),
++      [PLUGINS_SHADOW] = A_BOLD | ColorPairGrayBlack,
++      [PLUGINS_LABEL] = ColorPair(Magenta, Black),
+    },
+    [COLORSCHEME_BLACKONWHITE] = {
+       [RESET_COLOR] = ColorPair(Black, White),
+@@ -380,7 +394,14 @@ static int CRT_colorSchemes[LAST_COLORSCHEME][LAST_COLORELEMENT] = {
+       [ZFS_OTHER] = ColorPair(Magenta, White),
+       [ZFS_COMPRESSED] = ColorPair(Cyan, White),
+       [ZFS_RATIO] = ColorPair(Magenta, White),
+-      [ZRAM] = ColorPair(Yellow, White)
++      [ZRAM] = ColorPair(Yellow, White),
++      [PLUGINS_BLUE] = ColorPair(Blue, Black),
++      [PLUGINS_RED] = ColorPair(Red, Black),
++      [PLUGINS_YELLOW] = ColorPair(Yellow, Black),
++      [PLUGINS_GREEN] = ColorPair(Green, Black),
++      [PLUGINS_CYAN] = ColorPair(Cyan, Black),
++      [PLUGINS_SHADOW] = A_BOLD | ColorPairGrayBlack,
++      [PLUGINS_LABEL] = ColorPair(Magenta, Black),
+    },
+    [COLORSCHEME_LIGHTTERMINAL] = {
+       [RESET_COLOR] = ColorPair(Black, Black),
+@@ -474,6 +495,13 @@ static int CRT_colorSchemes[LAST_COLORSCHEME][LAST_COLORELEMENT] = {
+       [ZFS_COMPRESSED] = ColorPair(Cyan, Black),
+       [ZFS_RATIO] = A_BOLD | ColorPair(Magenta, Black),
+       [ZRAM] = ColorPair(Yellow, Black),
++      [PLUGINS_BLUE] = ColorPair(Blue, Black),
++      [PLUGINS_RED] = ColorPair(Red, Black),
++      [PLUGINS_YELLOW] = ColorPair(Yellow, Black),
++      [PLUGINS_GREEN] = ColorPair(Green, Black),
++      [PLUGINS_CYAN] = ColorPair(Cyan, Black),
++      [PLUGINS_SHADOW] = A_BOLD | ColorPairGrayBlack,
++      [PLUGINS_LABEL] = ColorPair(Magenta, Black),
+    },
+    [COLORSCHEME_MIDNIGHT] = {
+       [RESET_COLOR] = ColorPair(White, Blue),
+@@ -567,6 +595,13 @@ static int CRT_colorSchemes[LAST_COLORSCHEME][LAST_COLORELEMENT] = {
+       [ZFS_COMPRESSED] = A_BOLD | ColorPair(White, Blue),
+       [ZFS_RATIO] = A_BOLD | ColorPair(Magenta, Blue),
+       [ZRAM] = A_BOLD | ColorPair(Yellow, Blue),
++      [PLUGINS_BLUE] = ColorPair(Blue, Black),
++      [PLUGINS_RED] = ColorPair(Red, Black),
++      [PLUGINS_YELLOW] = ColorPair(Yellow, Black),
++      [PLUGINS_GREEN] = ColorPair(Green, Black),
++      [PLUGINS_CYAN] = ColorPair(Cyan, Black),
++      [PLUGINS_SHADOW] = A_BOLD | ColorPairGrayBlack,
++      [PLUGINS_LABEL] = ColorPair(Magenta, Black),
+    },
+    [COLORSCHEME_BLACKNIGHT] = {
+       [RESET_COLOR] = ColorPair(Cyan, Black),
+@@ -658,6 +693,13 @@ static int CRT_colorSchemes[LAST_COLORSCHEME][LAST_COLORELEMENT] = {
+       [ZFS_COMPRESSED] = ColorPair(Blue, Black),
+       [ZFS_RATIO] = ColorPair(Magenta, Black),
+       [ZRAM] = ColorPair(Yellow, Black),
++      [PLUGINS_BLUE] = ColorPair(Blue, Black),
++      [PLUGINS_RED] = ColorPair(Red, Black),
++      [PLUGINS_YELLOW] = ColorPair(Yellow, Black),
++      [PLUGINS_GREEN] = ColorPair(Green, Black),
++      [PLUGINS_CYAN] = ColorPair(Cyan, Black),
++      [PLUGINS_SHADOW] = A_BOLD | ColorPairGrayBlack,
++      [PLUGINS_LABEL] = ColorPair(Magenta, Black),
+    },
+    [COLORSCHEME_BROKENGRAY] = { 0 } // dynamically generated.
+ };
+diff --git a/CRT.h b/CRT.h
+index e85247b..732c8fe 100644
+--- a/CRT.h
++++ b/CRT.h
+@@ -131,6 +131,13 @@ typedef enum ColorElements_ {
+    ZFS_COMPRESSED,
+    ZFS_RATIO,
+    ZRAM,
++   PLUGINS_BLUE,
++   PLUGINS_RED,
++   PLUGINS_GREEN,
++   PLUGINS_YELLOW,
++   PLUGINS_CYAN,
++   PLUGINS_SHADOW,
++   PLUGINS_LABEL,
+    LAST_COLORELEMENT
+ } ColorElements;
+ 
+diff --git a/Header.c b/Header.c
+index d2d7f69..3602ba6 100644
+--- a/Header.c
++++ b/Header.c
+@@ -41,6 +41,7 @@ void Header_delete(Header* this) {
+ }
+ 
+ void Header_populateFromSettings(Header* this) {
++   int totalplugins = Platform_totalplugins();
+    Header_forEachColumn(this, col) {
+       const MeterColumnSettings* colSettings = &this->settings->columns[col];
+       for (int i = 0; i < colSettings->len; i++) {
+@@ -50,6 +51,14 @@ void Header_populateFromSettings(Header* this) {
+          }
+       }
+    }
++
++   for(int i = 0; i < totalplugins; i++) {
++      int plugin_side = Platform_plugin_side(i);
++      // 0 == left side
++      // 1 == right side
++      Header_addMeterByName(this, "PCPPlugin", plugin_side);
++   }
++
+    Header_calculateHeight(this);
+ }
+ 
+@@ -70,6 +79,9 @@ void Header_writeBackToSettings(const Header* this) {
+       for (int i = 0; i < len; i++) {
+          const Meter* meter = (Meter*) Vector_get(vec, i);
+          char* name;
++         // If it's PCPPlugin, please DO NOT write it back into htoprc
++         if(String_eq(As_Meter(meter)->name, "PCPPlugin"))
++            continue;
+          if (meter->param) {
+             xAsprintf(&name, "%s(%u)", As_Meter(meter)->name, meter->param);
+          } else {
+@@ -82,6 +94,7 @@ void Header_writeBackToSettings(const Header* this) {
+ }
+ 
+ MeterModeId Header_addMeterByName(Header* this, const char* name, int column) {
++   static int index = 0;
+    Vector* meters = this->columns[column];
+ 
+    char* paren = strchr(name, '(');
+@@ -94,8 +107,13 @@ MeterModeId Header_addMeterByName(Header* this, const char* name, int column) {
+    }
+    MeterModeId mode = TEXT_METERMODE;
+    for (const MeterClass* const* type = Platform_meterTypes; *type; type++) {
++      Meter* meter;
+       if (String_eq(name, (*type)->name)) {
+-         Meter* meter = Meter_new(this->pl, param, *type);
++         if (String_eq(name, "PCPPlugin")) {
++            meter = Meter_new(this->pl, index++, *type);
++         }
++         else
++            meter = Meter_new(this->pl, param, *type);
+          Vector_add(meters, meter);
+          mode = meter->mode;
+          break;
+diff --git a/Makefile.am b/Makefile.am
+index ca687d4..5ee9698 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -331,6 +331,7 @@ endif
+ # --------------------------
+ 
+ pcp_platform_headers = \
++	pcp/PCPPluginsMeter.h \
+ 	pcp/PCPProcess.h \
+ 	pcp/PCPProcessList.h \
+ 	pcp/Platform.h \
+@@ -343,6 +344,7 @@ pcp_platform_headers = \
+ 	zfs/ZfsCompressedArcMeter.h
+ 
+ pcp_platform_sources = \
++	pcp/PCPPluginsMeter.c \
+ 	pcp/PCPProcess.c \
+ 	pcp/PCPProcessList.c \
+ 	pcp/Platform.c \
+diff --git a/Meter.c b/Meter.c
+index ae867e1..677d8b4 100644
+--- a/Meter.c
++++ b/Meter.c
+@@ -18,6 +18,7 @@ in the source distribution for its full text.
+ #include "CRT.h"
+ #include "Macros.h"
+ #include "Object.h"
++#include "Platform.h"
+ #include "ProvideCurses.h"
+ #include "RichString.h"
+ #include "Settings.h"
+@@ -46,7 +47,15 @@ Meter* Meter_new(const struct ProcessList_* pl, unsigned int param, const MeterC
+    if (Meter_initFn(this)) {
+       Meter_init(this);
+    }
+-   Meter_setMode(this, type->defaultMode);
++   if(String_eq(type->name, "PCPPlugin")) {
++      char* plugin_type = Platform_plugin_type(param);
++      if(String_eq(plugin_type, "text"))
++         Meter_setMode(this, 2);
++      else if(String_eq(plugin_type, "bar"))
++         Meter_setMode(this, 1);
++   } else {
++      Meter_setMode(this, type->defaultMode);
++   }
+    return this;
+ }
+ 
+diff --git a/pcp/PCPPluginsMeter.c b/pcp/PCPPluginsMeter.c
+new file mode 100644
+index 0000000..6aeffe2
+--- /dev/null
++++ b/pcp/PCPPluginsMeter.c
+@@ -0,0 +1,189 @@
++#include "config.h" // IWYU pragma: keep
++
++#include "PCPPluginsMeter.h"
++
++#include <math.h>
++#include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "CRT.h"
++#include "Object.h"
++#include "Platform.h"
++#include "ProcessList.h"
++#include "RichString.h"
++#include "Settings.h"
++#include "XUtils.h"
++
++
++static const int PluginMeter_attributes[] = {
++   PLUGINS_BLUE,
++   PLUGINS_RED,
++   PLUGINS_GREEN,
++   PLUGINS_YELLOW,
++   PLUGINS_CYAN,
++   PLUGINS_SHADOW
++};
++
++static void PluginMeter_init(Meter* this) {
++   int index = this->param;
++   char* caption_value = Platform_plugin_caption(index);
++   int totalplugins = Platform_totalplugins();
++   for(int i = 0; i < totalplugins; i++) {
++      char caption[100];
++      xSnprintf(caption, sizeof(caption), "%s: ", caption_value);
++      Meter_setCaption(this, caption);
++   }
++}
++
++static void PluginMeter_updateValues(Meter* this) {
++   char* buffer = this->txtBuffer;
++   int pcp_metric_count = Platform_get_pcp_metric_count();
++   size_t size = sizeof(this->txtBuffer);
++   unsigned int index = this->param;
++   pmAtomValue value = Platform_get_metric_value(index+pcp_metric_count);
++   char* meter_type = Platform_plugin_type(index);
++   float result = 0;
++   int percent = 0;
++   this->curItems = 4;
++   char* color = Platform_plugin_color(index);
++   char* label = Platform_plugin_label(index);
++   uint64_t bar_max = Platform_plugin_bar_max(index);
++
++   /*
++    * Percent calculating
++    *
++   switch(meter_type) {
++      case 0:
++         result = ((plugins->bar_max[index] - value.l) * 100) / value.l;
++         percent = (int)result;
++         break;
++      case 1:
++         result = ((plugins->bar_max[index] - value.ul) * 100) / value.ul;
++         percent = (int)result;
++         break;
++      case 2:
++         result = ((plugins->bar_max[index] - value.ll) * 100) / value.ll;
++         percent = (int)result;
++         break;
++      case 3:
++         result = ((plugins->bar_max[index] - value.ull) * 100) / value.ull;
++         percent = (int)result;
++         break;
++      case 4:
++         result = ((plugins->bar_max[index] - value.f) * 100) / value.f;
++         percent = (int)result;
++         break;
++      case 5:
++         result = ((plugins->bar_max[index] - value.d) * 100) / value.d;
++         percent = (int)result;
++         break;
++      default: // err case
++         this->values[0] = 25; // blue
++         this->values[1] = 25; // green
++         this->values[2] = 25; // red
++         this->values[3] = 25; // yellow
++         break;
++   }
++   this->values[0] = percent;
++   */
++
++   // Start: temp. placeholder
++   if(String_eq(color, "blue")) {
++      //this->values[0] = percent;
++      this->values[0] = 50; // 50 == %50
++   } else if(String_eq(color, "green")) {
++      //this->values[1] = percent;
++      this->values[1] = 50;
++   } else if(String_eq(color, "red")) {
++      //this->values[2] = percent;
++      this->values[2] = 50;
++   } else if(String_eq(color, "yellow")) {
++      //this->values[3] = percent;
++      this->values[3] = 50;
++   } else {
++      //this->values[0] = percent;
++      this->values[0] = 50;
++   }
++   // End: temp. placeholder
++
++
++   // label
++   xSnprintf(buffer, sizeof(buffer), "%s", label);
++}
++
++static void PluginMeter_display(ATTR_UNUSED const Object* cast, RichString* out) {
++   const Meter* this = (const Meter*)cast;
++   int pcp_metric_count = Platform_get_pcp_metric_count();
++   char buffer[200];
++   int index = this->param + pcp_metric_count;
++   pmAtomValue value = Platform_get_metric_value(index);
++   short metric_type = Platform_get_metric_type(index);
++   char* color = Platform_plugin_color(this->param);
++   char* label = Platform_plugin_label(this->param);
++
++   // FIXME: cleanup! move this block to back-end & pcp/Platform.c
++   switch(metric_type) {
++      case 0:
++         xSnprintf(buffer, sizeof(buffer), "%d ", value.l);
++         break;
++      case 1:
++         xSnprintf(buffer, sizeof(buffer), "%u ", value.ul);
++         break;
++      case 2:
++         xSnprintf(buffer, sizeof(buffer), "%lu ", value.ll);
++         break;
++      case 3:
++         xSnprintf(buffer, sizeof(buffer), "%llu ", value.ull);
++         break;
++      case 4:
++         xSnprintf(buffer, sizeof(buffer), "%f ", value.f);
++         break;
++      case 5:
++         xSnprintf(buffer, sizeof(buffer), "%f ", value.d);
++         break;
++      case 6:
++         xSnprintf(buffer, sizeof(buffer), "%s ", value.cp);
++         break;
++      default:
++         xSnprintf(buffer, sizeof(buffer), "Err: pmDesc.type not implemented");
++         break;
++   }
++
++   if(String_eq(color, "blue"))
++      RichString_writeAscii(out, CRT_colors[PLUGINS_BLUE] , buffer);
++   else if(String_eq(color, "red"))
++      RichString_writeAscii(out, CRT_colors[PLUGINS_RED] , buffer);
++   else if(String_eq(color, "yellow"))
++      RichString_writeAscii(out, CRT_colors[PLUGINS_YELLOW] , buffer);
++   else if(String_eq(color, "green"))
++      RichString_writeAscii(out, CRT_colors[PLUGINS_GREEN] , buffer);
++   else if(String_eq(color, "cyan"))
++      RichString_writeAscii(out, CRT_colors[PLUGINS_CYAN] , buffer);
++   else if(String_eq(color, "shadow"))
++      RichString_writeAscii(out, CRT_colors[PLUGINS_SHADOW] , buffer);
++   else
++      RichString_writeAscii(out, CRT_colors[PLUGINS_GREEN] , buffer);
++
++   // label
++   xSnprintf(buffer, sizeof(buffer), "%s", label);
++   RichString_appendAscii(out, CRT_colors[PLUGINS_SHADOW], buffer);
++}
++
++
++const MeterClass PCPPluginsMeter_class = {
++   .super = {
++      .extends = Class(Meter),
++      .delete = Meter_delete,
++      .display = PluginMeter_display
++   },
++   .updateValues = PluginMeter_updateValues,
++   .defaultMode = TEXT_METERMODE,
++   .maxItems = PCP_METRIC_COUNT,
++   .total = 100.0,
++   .attributes = PluginMeter_attributes,
++   .name = "PCPPlugin",
++   .uiName = "PCPPlgin",
++   .caption = "PCPPlugin",
++   .init = PluginMeter_init,
++};
+diff --git a/pcp/PCPPluginsMeter.h b/pcp/PCPPluginsMeter.h
+new file mode 100644
+index 0000000..9c7aa05
+--- /dev/null
++++ b/pcp/PCPPluginsMeter.h
+@@ -0,0 +1,9 @@
++#ifndef HEADER_PCPPluginsMeter
++#define HEADER_PCPPluginsMeter
++
++
++#include "Meter.h"
++
++extern const MeterClass PCPPluginsMeter_class;
++
++#endif
+diff --git a/pcp/Platform.c b/pcp/Platform.c
+index 42db6be..4caba54 100644
+--- a/pcp/Platform.c
++++ b/pcp/Platform.c
+@@ -29,6 +29,9 @@ in the source distribution for its full text.
+ #include "NetworkIOMeter.h"
+ #include "Object.h"
+ #include "Panel.h"
++#include "PCPPluginsMeter.h"
++#include "PCPProcess.h"
++#include "PCPProcessList.h"
+ #include "ProcessList.h"
+ #include "ProvideCurses.h"
+ #include "Settings.h"
+@@ -64,6 +67,22 @@ typedef struct Platform_ {
+    int ncpu;			/* maximum processor count configured */
+ } Platform;
+ 
++typedef struct Plugins_ {
++   char** caption;
++   char** color;
++   char** description;
++   char** expr;
++   char** label;
++   char** metric;
++   char** type;
++   char** uiName;
++   int* onefetch;
++   int* side;
++   uint64_t* bar_max;
++} Plugins;
++
++Plugins* plugins;
++int totalplugins;
+ Platform* pcp;
+ 
+ ProcessField Platform_defaultFields[] = { PID, USER, PRIORITY, NICE, M_VIRT, M_RESIDENT, (int)M_SHARE, STATE, PERCENT_CPU, PERCENT_MEM, TIME, COMM, 0 };
+@@ -78,6 +97,7 @@ const unsigned int Platform_numberOfSignals = ARRAYSIZE(Platform_signals);
+ 
+ const MeterClass* const Platform_meterTypes[] = {
+    &CPUMeter_class,
++   &PCPPluginsMeter_class,
+    &ClockMeter_class,
+    &DateMeter_class,
+    &DateTimeMeter_class,
+@@ -244,6 +264,17 @@ static const char *Platform_metricNames[] = {
+    [PCP_METRIC_COUNT] = NULL
+ };
+ 
++// REMOVEME: this function for testing only.
++// Give me the index of your metric, I will print its value to stderr
++void mydump(Metric metric) {
++   pmValueSet* vset = pcp->result->vset[metric];
++   const pmDesc* desc = &pcp->descs[metric];
++   fprintf(stderr, "From mydump() ===============>> %d - %s\n",
++         metric, plugins->metric[metric]);
++   pmPrintValue(stderr, vset->valfmt, desc->type, &vset->vlist[0], 1);
++   fprintf(stderr, "\n");
++}
++
+ pmAtomValue* Metric_values(Metric metric, pmAtomValue *atom, int count, int type) {
+ 
+    pmValueSet* vset = pcp->result->vset[metric];
+@@ -409,6 +440,27 @@ pmOptions opts;
+ 
+ void Platform_init(void) {
+    const char* source;
++   char * pmRDM_msgerr;
++   int sts;
++
++   plugins = malloc(sizeof(Plugins));
++
++   Platform_pluginParser();
++   fprintf(stderr, "Platform_computePluginCount = %d\n", totalplugins);
++
++   plugins->metric[totalplugins] = NULL;
++
++   for (int i = 0; i < totalplugins; i++) {
++      fprintf(stderr, "%d - metric: %s meter_type: %s color: %s caption:\"%s\" uiName: \"%s\"",
++            i, plugins->metric[i], plugins->type[i], plugins->color[i],
++            plugins->caption[i], plugins->uiName[i]);
++      fprintf(stderr, " expr %s\n", plugins->expr[i]);
++      fprintf(stderr, " onefetch %d\n", plugins->onefetch[i]);
++      fprintf(stderr, " label %s\n", plugins->label[i]);
++   }
++
++   fprintf(stderr, "totalmetrics: %d\n", totalplugins);
++
+    if (opts.context == PM_CONTEXT_ARCHIVE) {
+       source = opts.archives[0];
+    } else if (opts.context == PM_CONTEXT_HOST) {
+@@ -418,7 +470,6 @@ void Platform_init(void) {
+       source = "local:";
+    }
+ 
+-   int sts;
+    sts = pmNewContext(opts.context, source);
+    /* with no host requested, fallback to PM_CONTEXT_LOCAL shared libraries */
+    if (sts < 0 && opts.context == PM_CONTEXT_HOST && opts.nhosts == 0) {
+@@ -437,19 +488,37 @@ void Platform_init(void) {
+ 
+    pcp = xCalloc(1, sizeof(Platform));
+    pcp->context = sts;
+-   pcp->fetch = xCalloc(PCP_METRIC_COUNT, sizeof(pmID));
+-   pcp->pmids = xCalloc(PCP_METRIC_COUNT, sizeof(pmID));
+-   pcp->names = xCalloc(PCP_METRIC_COUNT, sizeof(char*));
+-   pcp->descs = xCalloc(PCP_METRIC_COUNT, sizeof(pmDesc));
++   pcp->fetch = xCalloc(PCP_METRIC_COUNT + totalplugins, sizeof(pmID));
++   pcp->pmids = xCalloc(PCP_METRIC_COUNT + totalplugins, sizeof(pmID));
++   pcp->names = xCalloc(PCP_METRIC_COUNT + totalplugins, sizeof(char*));
++   pcp->descs = xCalloc(PCP_METRIC_COUNT + totalplugins, sizeof(pmDesc));
+ 
+    if (opts.context == PM_CONTEXT_ARCHIVE) {
+       gettimeofday(&pcp->offset, NULL);
+       pmtimevalDec(&pcp->offset, &opts.start);
+    }
+ 
++   // pmRegisterDerivedMetric : FIXME
++   // I cannot handle:
++   // delta(disk.dev.total_bytes) / delta(disk.dev.total)
++   for (int i = 0; i < totalplugins; i++) {
++      if( plugins->expr[i] != NULL) {
++         pmRegisterDerivedMetric(plugins->metric[i], plugins->expr[i], &pmRDM_msgerr);
++         if(sts < 0) {
++            fprintf(stderr, "name: %s, \t expr: %s\nerr: %s\n",
++                  plugins->metric[i],
++                  plugins->expr[i], pmRDM_msgerr);
++            free(&pmRDM_msgerr);
++         }
++      }
++   }
++
+    for (unsigned int i = 0; i < PCP_METRIC_COUNT; i++)
+       Platform_addMetric(i, Platform_metricNames[i]);
+ 
++   for (int i = 0; i < totalplugins; i++)
++      Platform_addMetric(i+PCP_METRIC_COUNT, plugins->metric[i]);
++
+    sts = pmLookupName(pcp->total, pcp->names, pcp->pmids);
+    if (sts < 0) {
+       fprintf(stderr, "Error: cannot lookup metric names: %s\n", pmErrStr(sts));
+@@ -486,6 +555,9 @@ void Platform_init(void) {
+    Metric_enable(PCP_UNAME_MACHINE, true);
+    Metric_enable(PCP_UNAME_DISTRO, true);
+ 
++   for (int i = PCP_METRIC_COUNT; i < PCP_METRIC_COUNT+totalplugins; i++)
++      Metric_enable(i, true);
++
+    Metric_fetch(NULL);
+ 
+    for (Metric metric = 0; metric < PCP_PROC_PID; metric++)
+@@ -497,6 +569,16 @@ void Platform_init(void) {
+    Metric_enable(PCP_UNAME_MACHINE, false);
+    Metric_enable(PCP_UNAME_DISTRO, false);
+ 
++   // handle one fetch only
++   /*
++   for (unsigned int i = PCP_METRIC_COUNT; i < PCP_METRIC_COUNT+totalplugins; i++) {
++      if(plugins->onefetch[i-PCP_METRIC_COUNT] == 1) {
++         Metric_enable(i-PCP_METRIC_COUNT, false);
++         mydump(i); // REMOVE ME
++      }
++   }
++   */
++
+    /* first sample (fetch) performed above, save constants */
+    Platform_getBootTime();
+    Platform_getRelease(0);
+@@ -514,6 +596,18 @@ void Platform_done(void) {
+    free(pcp->names);
+    free(pcp->descs);
+    free(pcp);
++   free(plugins->bar_max);
++   free(plugins->caption);
++   free(plugins->color);
++   free(plugins->description);
++   free(plugins->expr);
++   free(plugins->label);
++   free(plugins->metric);
++   free(plugins->onefetch);
++   free(plugins->side);
++   free(plugins->type);
++   free(plugins->uiName);
++   free(plugins);
+ }
+ 
+ void Platform_setBindings(Htop_Action* keys) {
+@@ -883,3 +977,139 @@ void Platform_gettime_monotonic(uint64_t* msec) {
+    struct timeval* tv = &pcp->result->timestamp;
+    *msec = ((uint64_t)tv->tv_sec * 1000) + ((uint64_t)tv->tv_usec / 1000);
+ }
++
++int Platform_pluginParser(void)
++{
++   DIR *dir = opendir("./plugins");
++   FILE *input;
++   struct dirent *dirent;
++   int index = 0;
++
++   if (dir == NULL)  // opendir returns NULL if couldn't open directory
++   {
++      fprintf(stderr, "Could not open current directory" );
++   }
++
++   if(NULL == (dir = opendir("plugins/"))) {
++      fprintf(stderr, "Error : Failed %s\n", strerror(errno));
++   }
++
++   char buffer[1024];
++
++   plugins->bar_max = xCalloc(1, sizeof(uint64_t*));
++   plugins->caption = xCalloc(1, sizeof(char**));
++   plugins->color = xCalloc(1, sizeof(char**));
++   plugins->description = xCalloc(1, sizeof(char**));
++   plugins->expr = xCalloc(1, sizeof(char**));
++   plugins->label = xCalloc(1, sizeof(char**));
++   plugins->metric = xCalloc(1, sizeof(char**));
++   plugins->onefetch = xCalloc(1, sizeof(int));
++   plugins->side = xCalloc(1, sizeof(int));
++   plugins->type = xCalloc(1, sizeof(char**));
++   plugins->uiName = xCalloc(1, sizeof(char**));
++
++   while ((dirent = readdir(dir)) != NULL) {
++      /* On linux/Unix we don't want current and parent directories
++      * On windows machine too
++      */
++     if (!strcmp (dirent->d_name, "."))
++         continue;
++     if (!strcmp (dirent->d_name, ".."))
++         continue;
++
++      char statePath[256];
++      xSnprintf(statePath, sizeof(statePath), "plugins/%s", dirent->d_name);
++      fprintf(stderr, "statePath: %s\n", statePath);
++      input = fopen(statePath, "r");
++      if (input == NULL) {
++         fprintf(stderr, "%s\n", dirent->d_name);
++         fprintf(stderr, "Err: failed to *open file:  %s\n", strerror(errno));
++
++         return 1;
++      }
++
++      while (fgets(buffer, sizeof(buffer), input)) {
++         char cr[20]; // meter color
++         char metric[100]; // metric == name; pmRegisterDerived(char *name, char *expr);
++         char exp[1000]; // exp == expr; pmRegisterDerived(char *name, char *expr);
++         char mt[20]; // [m]eter [t]ype
++         char capt[50]; // caption
++         char desc[200];
++         int side; // left/right side
++         int nfetch;
++         uint64_t bar_mx;
++         char lbl[20]; // label
++
++         plugins->uiName[index] = xStrdup(dirent->d_name);
++
++         if(buffer[0] == '#')
++            continue;
++         else if(sscanf(buffer, "color = %s", cr) == 1)
++               plugins->color[index] = xStrdup(cr);
++         else if(sscanf(buffer, "type = %s", mt) == 1)
++            plugins->type[index] = xStrdup(mt);
++         else if(sscanf(buffer, "caption = %[^\n]", capt) == 1)
++            plugins->caption[index] = xStrdup(capt);
++         else if(sscanf(buffer, "description = %[^\n]", desc) == 1)
++            plugins->description[index] = xStrdup(desc);
++         else if(sscanf(buffer, "side = %d", &side) == 1)
++            plugins->side[index] = side;
++         else if(sscanf(buffer, "onefetch = %d", &nfetch) == 1)
++            plugins->onefetch[index] = nfetch;
++         else if(sscanf(buffer, "metric = %s", metric) == 1)
++            plugins->metric[index] = xStrdup(metric);
++         else if(sscanf(buffer, "expr = %[^\n]", exp) == 1)
++            plugins->expr[index] = xStrdup(exp);
++         else if(sscanf(buffer, "bar_range = %*d %lu", &bar_mx) == 1)
++            plugins->bar_max[index] = bar_mx;
++         else if(sscanf(buffer, "label = %s", lbl) == 1)
++            plugins->label[index] = xStrdup(lbl);
++      }
++      ++index;
++
++      plugins->bar_max = xRealloc(plugins->bar_max, sizeof(uint64_t*)*index+1);
++      plugins->caption = xRealloc(plugins->caption, sizeof(char**)*index+1);
++      plugins->color = xRealloc(plugins->color, sizeof(char**)*index+1);
++      plugins->description = xRealloc(plugins->description, sizeof(char**)*index+1);
++      plugins->expr = xRealloc(plugins->expr, sizeof(char**)*index+1);
++      plugins->label = xRealloc(plugins->label, sizeof(char**)*(index+9));
++      plugins->metric = xRealloc(plugins->metric, sizeof(char**)*index+1);
++      plugins->onefetch = xRealloc(plugins->onefetch, sizeof(int)*index+1);
++      plugins->side = xRealloc(plugins->side, sizeof(int)*index+1);
++      plugins->type = xRealloc(plugins->type, sizeof(char**)*index+1);
++      plugins->uiName = xRealloc(plugins->uiName, sizeof(char**)*index+1);
++
++      fclose(input);
++   }
++   totalplugins = index;
++   closedir(dir);
++   return 0;
++}
++
++int Platform_get_pcp_metric_count(void) { return PCP_METRIC_COUNT; }
++
++pmAtomValue Platform_get_metric_value(int index) {
++   pmAtomValue value;
++   Metric_values(index, &value, 1, pcp->descs[index].type);
++   return value;
++}
++
++short Platform_get_metric_type(int index) { return pcp->descs[index].type; }
++
++int Platform_totalplugins(void) { return totalplugins; }
++
++int Platform_plugin_side(int index) { return plugins->side[index]; }
++
++char* Platform_plugin_type(int index) { return plugins->type[index]; }
++
++char* Platform_plugin_caption(int index) { return plugins->caption[index]; }
++
++char* Platform_plugin_color(int index) { return plugins->color[index]; }
++
++char* Platform_plugin_description(int index) { return plugins->description[index]; }
++
++char* Platform_plugin_label(int index) { return plugins->label[index]; }
++
++char* Platform_plugin_uiName(int index) { return plugins->uiName[index]; }
++
++uint64_t Platform_plugin_bar_max(int index) { return plugins->bar_max[index]; }
+diff --git a/pcp/Platform.h b/pcp/Platform.h
+index cd90bc0..8375dcb 100644
+--- a/pcp/Platform.h
++++ b/pcp/Platform.h
+@@ -257,4 +257,32 @@ void Platform_gettime_realtime(struct timeval* tv, uint64_t* msec);
+ 
+ void Platform_gettime_monotonic(uint64_t* msec);
+ 
++int Platform_pluginParser(void);
++
++int Platform_get_pcp_metric_count(void);
++
++pmAtomValue Platform_get_metric_value(int index);
++
++short Platform_get_metric_type(int index);
++
++int Platform_totalplugins(void);
++
++char* Platform_plugin_caption(int index);
++
++char* Platform_plugin_color(int index);
++
++char* Platform_plugin_description(int index);
++
++char* Platform_plugin_label(int index);
++
++char* Platform_plugin_meter_type(int index);
++
++char* Platform_plugin_type(int index);
++
++char* Platform_plugin_uiName(int index);
++
++int Platform_plugin_side(int index);
++
++uint64_t Platform_plugin_bar_max(int index);
++
+ #endif
+diff --git a/plugins/bufmem b/plugins/bufmem
+new file mode 100644
+index 0000000..a9cffe2
+--- /dev/null
++++ b/plugins/bufmem
+@@ -0,0 +1,12 @@
++metric =  mem.util.bufmem
++type = bar
++color = red
++caption = bufmem
++side = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is bufmem description
++#bar_range = 0 2000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = mub
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/dirty b/plugins/dirty
+new file mode 100644
+index 0000000..3ce192f
+--- /dev/null
++++ b/plugins/dirty
+@@ -0,0 +1,12 @@
++metric =  mem.util.dirty
++type = text
++color = blue
++caption = mem dirty
++side = 0
++#bar_caption = ZFS # should be 3 char only.
++description = this is dirty description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = mud
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/disk b/plugins/disk
+new file mode 100644
+index 0000000..9d17f02
+--- /dev/null
++++ b/plugins/disk
+@@ -0,0 +1,12 @@
++metric =  disk.dev.read_bytes
++type = text
++color = yellow
++caption = disk-avgrq
++side = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is sysname description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = ddrb
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/distro b/plugins/distro
+new file mode 100644
+index 0000000..0bb530e
+--- /dev/null
++++ b/plugins/distro
+@@ -0,0 +1,12 @@
++metric = kernel.uname.distro
++type = text
++color = red
++caption = sys
++onefetch = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is distro description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = label
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/mem b/plugins/mem
+new file mode 100644
+index 0000000..5a030f5
+--- /dev/null
++++ b/plugins/mem
+@@ -0,0 +1,13 @@
++metric = my.summary.disk.avgsz
++expr = mem.physmem - mem.util.free - mem.util.bufmem - mem.util.cached - mem.util.slabReclaimable + mem.util.shmem
++type = text
++color = yellow
++caption = mem-adv-used
++side = 0
++#bar_caption = ZFS # should be 3 char only.
++description = this is mem-adv-used description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = mem
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/net-raw b/plugins/net-raw
+new file mode 100644
+index 0000000..fb7017c
+--- /dev/null
++++ b/plugins/net-raw
+@@ -0,0 +1,12 @@
++metric = my.summary.network.raw
++expr = network.rawconn.count + network.rawconn6.count
++type = text
++color = cyan
++caption = raw
++#bar_caption = ZFS # should be 3 char only.
++description = this is net raw description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lbl
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/network-in b/plugins/network-in
+new file mode 100644
+index 0000000..abfe832
+--- /dev/null
++++ b/plugins/network-in
+@@ -0,0 +1,12 @@
++metric = network.interface.in.bytes
++type = bar
++color = shadow
++caption = network-in
++side = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is network-in description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lbl
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/network-in2 b/plugins/network-in2
+new file mode 100644
+index 0000000..7af82c7
+--- /dev/null
++++ b/plugins/network-in2
+@@ -0,0 +1,12 @@
++metric = network.interface.in.bytes
++type = bar
++color = red
++caption = network-in
++side = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is network-in description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lbl
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/network-in3 b/plugins/network-in3
+new file mode 100644
+index 0000000..9481e7b
+--- /dev/null
++++ b/plugins/network-in3
+@@ -0,0 +1,12 @@
++metric = network.interface.in.bytes
++type = bar
++color = green
++caption = network-in
++side = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is network-in description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lbl
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/network-out b/plugins/network-out
+new file mode 100644
+index 0000000..1050625
+--- /dev/null
++++ b/plugins/network-out
+@@ -0,0 +1,11 @@
++metric = network.interface.out.bytes
++type = text
++color = blue
++caption = network-out
++#bar_caption = ZFS # should be 3 char only.
++description = this is network-out description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lbl
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/packets-out b/plugins/packets-out
+new file mode 100644
+index 0000000..0984d20
+--- /dev/null
++++ b/plugins/packets-out
+@@ -0,0 +1,11 @@
++metric = network.interface.out.packets
++type = text
++color = red
++caption = packets-out
++#bar_caption = ZFS # should be 3 char only.
++description = this is packets-out description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lbl
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/shmem b/plugins/shmem
+new file mode 100644
+index 0000000..ec9d0f8
+--- /dev/null
++++ b/plugins/shmem
+@@ -0,0 +1,11 @@
++metric = mem.util.shmem
++type = bar
++color = yellow
++caption = shmem
++#bar_caption = ZFS # should be 3 char only.
++description = this is shmem description
++bar_range = 0 10000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = shm
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/sys b/plugins/sys
+new file mode 100644
+index 0000000..80addc9
+--- /dev/null
++++ b/plugins/sys
+@@ -0,0 +1,12 @@
++metric = my.summary.sys
++expr = delta(kernel.all.intr)
++type = text
++color = cyan
++caption = sys
++#bar_caption = ZFS # should be 3 char only.
++description = this is sys description
++bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = sys
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/udp-active b/plugins/udp-active
+new file mode 100644
+index 0000000..4e44e81
+--- /dev/null
++++ b/plugins/udp-active
+@@ -0,0 +1,12 @@
++metric = my.summary.udp.listen
++expr = network.udpconn.established + network.udpconn6.established
++type = text
++color = shadow
++caption = act
++#bar_caption = ZFS # should be 3 char only.
++description = this is act description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lis
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/udp-listen b/plugins/udp-listen
+new file mode 100644
+index 0000000..abadf73
+--- /dev/null
++++ b/plugins/udp-listen
+@@ -0,0 +1,12 @@
++metric = my.summary.udp.listen2
++expr = network.udpconn.listen + network.udpconn6.listen
++type = text
++color = red
++caption = lis
++#bar_caption = ZFS # should be 3 char only.
++description = this is udp listen description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = lis2
++#led = 666 foo / 123 bar / 42 baz
+diff --git a/plugins/zfssize b/plugins/zfssize
+new file mode 100644
+index 0000000..3be7ba7
+--- /dev/null
++++ b/plugins/zfssize
+@@ -0,0 +1,12 @@
++metric = zfs.arc.size
++type = text
++color = blue
++caption = zfs size
++onefetch = 1
++#bar_caption = ZFS # should be 3 char only.
++description = this is sysname description
++#bar_range = 0 1000
++#bar_data = 666 123 42 23
++#bar_color = 4 6 2 1
++label = zfs
++#led = 666 foo / 123 bar / 42 baz
+-- 
+2.25.1
+
