@@ -1,0 +1,953 @@
+From efe2843fb5ced05894fd98f2b9951070c9e0ba10 Mon Sep 17 00:00:00 2001
+From: Sohaib Mohamed <sohaib.amhmd@gmail.com>
+Date: Sun, 11 Jul 2021 03:11:29 +0200
+Subject: [PATCH] LOOK AT ME - this whole function
+
+Parser
+
+fixup! Parser
+
+fixup! fixup! Parser
+
+fixup! fixup! fixup! Parser
+
+fixup! fixup! fixup! fixup! Parser
+
+Printing phase
+
+Debugging...
+
+mydump_pid
+
+Notes...
+
+mydump_inst: inspired from Metric_instance
+
+my-ps-aux
+
+Revert 24aa391 no dead for making a 'dynamic' PID
+
+BUG: if DynamicColumn_search failed, I get segfault.
+
+check if search result not found, just ignore it.
+
+semi-dynamic-column: Edit AvailableColumnsPanel
+
+my first hard-coded dynamicColumn!
+
+fixup! my first hard-coded dynamicColumn!
+
+fixup! fixup! my first hard-coded dynamicColumn!
+
+fixup! fixup! fixup! my first hard-coded dynamicColumn!
+
+fixup! fixup! fixup! fixup! my first hard-coded dynamicColumn!
+---
+ Action.c                |  12 +-
+ AvailableColumnsPanel.c |  21 +-
+ ColumnsPanel.c          |  17 +-
+ CommandLine.c           |   8 +-
+ Process.c               |   5 +-
+ Process.h               |   3 +-
+ ProcessList.c           |  28 ++-
+ Settings.c              |  12 +-
+ pcp/PCPDynamicMeter.c   |   1 +
+ pcp/PCPProcessList.c    |  20 +-
+ pcp/Platform.c          | 462 +++++++++++++++++++++++++++++++++++++++-
+ pcp/Platform.h          |   6 +
+ 12 files changed, 562 insertions(+), 33 deletions(-)
+
+diff --git a/Action.c b/Action.c
+index d6fd737..9831654 100644
+--- a/Action.c
++++ b/Action.c
+@@ -163,14 +163,22 @@ Htop_Reaction Action_setSortKey(Settings* settings, ProcessField sortKey) {
+ 
+ // ----------------------------------------
+ 
++char Xname[] = "DynamicCol";
+ static Htop_Reaction actionSetSortColumn(State* st) {
+    Htop_Reaction reaction = HTOP_OK;
+    Panel* sortPanel = Panel_new(0, 0, 0, 0, Class(ListItem), true, FunctionBar_newEnterEsc("Sort   ", "Cancel "));
+    Panel_setHeader(sortPanel, "Sort by");
+    const ProcessField* fields = st->settings->fields;
+    for (int i = 0; fields[i]; i++) {
+-      char* name = String_trim(Process_fields[fields[i]].name);
+-      Panel_add(sortPanel, (Object*) ListItem_new(name, fields[i]));
++      char* name = NULL;
++      if(i > LAST_PROCESSFIELD) { // DynamicColumns
++         name = Xname;
++         Panel_add(sortPanel, (Object*) ListItem_new("CCC", 0));
++      } else {  // regular columns
++         fprintf(stderr, "%s\n", Process_fields[fields[i]].name);
++         name = String_trim(Process_fields[fields[i]].name);
++         Panel_add(sortPanel, (Object*) ListItem_new(name, fields[i]));
++      }
+       if (fields[i] == Settings_getActiveSortKey(st->settings))
+          Panel_setSelected(sortPanel, i);
+ 
+diff --git a/AvailableColumnsPanel.c b/AvailableColumnsPanel.c
+index 04e4fa5..fab35de 100644
+--- a/AvailableColumnsPanel.c
++++ b/AvailableColumnsPanel.c
+@@ -44,7 +44,19 @@ static HandlerResult AvailableColumnsPanel_eventHandler(Panel* super, int ch) {
+ 
+          int key = selected->key;
+          int at = Panel_getSelectedIndex(this->columns);
+-         Panel_insert(this->columns, at, (Object*) ListItem_new(Process_fields[key].name, key));
++         //fprintf(stderr, "name: %s key %d\n", Process_fields[key].name, key); // Will panic
++
++         // FIXME Change Process_fields[i].name
++         // See AvailableMetersPanel, DynamicMeter impl
++         // lol = because this input useless!, the key is every thing
++         //Panel_insert(this->columns, at, (Object*) ListItem_new(Process_fields[key].name, key));
++         if( key > LAST_PROCESSFIELD) {
++            fprintf(stderr, "name: %s key %d\n", "lol", key); // Will panic
++
++            Panel_insert(this->columns, at, (Object*) ListItem_new("lol", key));
++         } else {
++            Panel_insert(this->columns, at, (Object*) ListItem_new(Process_fields[key].name, key));
++         }
+          Panel_setSelected(this->columns, at+1);
+          ColumnsPanel_update(this->columns);
+          result = HANDLED;
+@@ -83,6 +95,13 @@ AvailableColumnsPanel* AvailableColumnsPanel_new(Panel* columns) {
+          Panel_add(super, (Object*) ListItem_new(description, i));
+       }
+    }
++   for (int i = LAST_PROCESSFIELD; i < MAX_PROCESSFIELD; i++) {
++      if (1) { // FIXME check if description != NULL
++         char description[256];
++         xSnprintf(description, sizeof(description), "%d %s - %s", i, "name", "description");
++         Panel_add(super, (Object*) ListItem_new(description, i));
++      }
++   }
+    this->columns = columns;
+    return this;
+ }
+diff --git a/ColumnsPanel.c b/ColumnsPanel.c
+index 5382db0..b3ccf15 100644
+--- a/ColumnsPanel.c
++++ b/ColumnsPanel.c
+@@ -126,9 +126,14 @@ ColumnsPanel* ColumnsPanel_new(Settings* settings) {
+    Panel_setHeader(super, "Active Columns");
+ 
+    const ProcessField* fields = this->settings->fields;
++   // Active panel
+    for (; *fields; fields++) {
+-      if (Process_fields[*fields].name) {
++      if (*fields < LAST_PROCESSFIELD) {
++         fprintf(stderr, "fields: %d\n", (int)*fields);
+          Panel_add(super, (Object*) ListItem_new(Process_fields[*fields].name, *fields));
++      } else {
++         fprintf(stderr, "fields: %d\n", (int)*fields);
++         Panel_add(super, (Object*) ListItem_new("empty", *fields));
+       }
+    }
+    return this;
+@@ -138,12 +143,20 @@ void ColumnsPanel_update(Panel* super) {
+    ColumnsPanel* this = (ColumnsPanel*) super;
+    int size = Panel_size(super);
+    this->settings->changed = true;
++   // FIXME next line is critical should be handled carefully
++   fprintf(stderr, "Panel size: %d\n", size);
+    this->settings->fields = xRealloc(this->settings->fields, sizeof(ProcessField) * (size + 1));
++   fprintf(stderr, "Panic 1\n");
+    this->settings->flags = 0;
+    for (int i = 0; i < size; i++) {
++      fprintf(stderr, "size: %d\n", i);
+       int key = ((ListItem*) Panel_get(super, i))->key;
+       this->settings->fields[i] = key;
+-      this->settings->flags |= Process_fields[key].flags;
++      if (key < LAST_PROCESSFIELD) {
++         this->settings->flags |= Process_fields[key].flags;
++      } else {
++         // handle dynamic columns here
++      }
+    }
+    this->settings->fields[size] = 0;
+ }
+diff --git a/CommandLine.c b/CommandLine.c
+index 4a721a3..45de9cf 100644
+--- a/CommandLine.c
++++ b/CommandLine.c
+@@ -136,17 +136,17 @@ static CommandLineSettings parseArguments(const char* program, int argc, char**
+             assert(optarg); /* please clang analyzer, cause optarg can be NULL in the 'u' case */
+             if (String_eq(optarg, "help")) {
+                for (int j = 1; j < LAST_PROCESSFIELD; j++) {
+-                  const char* name = Process_fields[j].name;
+-                  const char* description = Process_fields[j].description;
++                  const char* name = Process_fields[j].name; // change this
++                  const char* description = Process_fields[j].description; // change this
+                   if (name) printf("%19s %s\n", name, description);
+                }
+                exit(0);
+             }
+             flags.sortKey = 0;
+             for (int j = 1; j < LAST_PROCESSFIELD; j++) {
+-               if (Process_fields[j].name == NULL)
++               if (Process_fields[j].name == NULL) // change this
+                   continue;
+-               if (String_eq(optarg, Process_fields[j].name)) {
++               if (String_eq(optarg, Process_fields[j].name)) { // change this
+                   flags.sortKey = j;
+                   break;
+                }
+diff --git a/Process.c b/Process.c
+index b93759b..67541fb 100644
+--- a/Process.c
++++ b/Process.c
+@@ -902,8 +902,9 @@ void Process_writeField(const Process* this, RichString* str, ProcessField field
+       xSnprintf(buffer, n, "%-9d ", this->st_uid);
+       break;
+    default:
+-      assert(0 && "Process_writeField: default key reached"); /* should never be reached */
+-      xSnprintf(buffer, n, "- ");
++      //assert(0 && "Process_writeField: default key reached"); /* should never be reached */
++      // FIXME call DynamicColumn() here
++      xSnprintf(buffer, n, "%d ", (int)field);
+    }
+    RichString_appendAscii(str, attr, buffer);
+ }
+diff --git a/Process.h b/Process.h
+index f4daac0..0b05e73 100644
+--- a/Process.h
++++ b/Process.h
+@@ -56,7 +56,8 @@ typedef enum ProcessField_ {
+    /* Platform specific fields, defined in ${platform}/ProcessField.h */
+    PLATFORM_PROCESS_FIELDS
+ 
+-   LAST_PROCESSFIELD
++   LAST_PROCESSFIELD,
++   MAX_PROCESSFIELD = 1000
+ } ProcessField;
+ 
+ struct Settings_;
+diff --git a/ProcessList.c b/ProcessList.c
+index 82f719f..04f4ebe 100644
+--- a/ProcessList.c
++++ b/ProcessList.c
+@@ -23,9 +23,9 @@ ProcessList* ProcessList_init(ProcessList* this, const ObjectClass* klass, Users
+    this->processes = Vector_new(klass, true, DEFAULT_SIZE);
+    this->processes2 = Vector_new(klass, true, DEFAULT_SIZE); // tree-view auxiliary buffer
+ 
+-   this->processTable = Hashtable_new(200, false);
+-   this->displayTreeSet = Hashtable_new(200, false);
+-   this->draftingTreeSet = Hashtable_new(200, false);
++   this->processTable = Hashtable_new(200, false); // ?? Change 200
++   this->displayTreeSet = Hashtable_new(200, false); // ?? Change 200
++   this->draftingTreeSet = Hashtable_new(200, false); // ?? Change 200
+ 
+    this->usersTable = usersTable;
+    this->pidMatchList = pidMatchList;
+@@ -82,13 +82,22 @@ void ProcessList_setPanel(ProcessList* this, Panel* panel) {
+    this->panel = panel;
+ }
+ 
++char sma_title[] = "myTitle";
+ static const char* alignedProcessFieldTitle(ProcessField field) {
+-   const char* title = Process_fields[field].title;
+-   if (!title)
+-      return "- ";
++   const char* title;
++   if(field > LAST_PROCESSFIELD) { // DynamicColumns
++    title = sma_title;
+ 
+-   if (!Process_fields[field].pidColumn)
+-      return title;
++   } else { // regular columns
++
++      title = Process_fields[field].title;
++      if (!title)
++         return "- ";
++
++      if (!Process_fields[field].pidColumn)
++         //return "* ";
++         return title;
++   }
+ 
+    static char titleBuffer[PROCESS_MAX_PID_DIGITS + /* space */ 1 + /* null-terminator */ + 1];
+    xSnprintf(titleBuffer, sizeof(titleBuffer), "%*s ", Process_pidDigits, title);
+@@ -562,7 +571,7 @@ void ProcessList_rebuildPanel(ProcessList* this) {
+    }
+ }
+ 
+-Process* ProcessList_getProcess(ProcessList* this, pid_t pid, bool* preExisting, Process_New constructor) {
++Process* ProcessList_getProcess(ProcessList* this, pid_t pid, bool* preExisting, Process_New constructor) { // LOOKATME
+    Process* proc = (Process*) Hashtable_get(this->processTable, pid);
+    *preExisting = proc != NULL;
+    if (proc) {
+@@ -576,6 +585,7 @@ Process* ProcessList_getProcess(ProcessList* this, pid_t pid, bool* preExisting,
+    return proc;
+ }
+ 
++// LOOKATME
+ void ProcessList_scan(ProcessList* this, bool pauseProcessUpdate) {
+    // in pause mode only gather global data for meters (CPU/memory/...)
+    if (pauseProcessUpdate) {
+diff --git a/Settings.c b/Settings.c
+index acb3edf..e5dc656 100644
+--- a/Settings.c
++++ b/Settings.c
+@@ -112,13 +112,19 @@ static void readFields(ProcessField* fields, uint32_t* flags, const char* line)
+    free(trim);
+    int i, j;
+    *flags = 0;
+-   for (j = 0, i = 0; i < LAST_PROCESSFIELD && ids[i]; i++) {
++   for (j = 0, i = 0; i < MAX_PROCESSFIELD && ids[i]; i++) {
+       // This "+1" is for compatibility with the older enum format.
+       int id = atoi(ids[i]) + 1;
+-      if (id > 0 && id < LAST_PROCESSFIELD && Process_fields[id].name) {
++      // FIXME set back Process_fields[id].name
++      //if (id > 0 && id < MAX_PROCESSFIELD && Process_fields[id].name) {
++      if (id > 0 && id < LAST_PROCESSFIELD ) { // FIXME make sure this logic is vaild
+          fields[j] = id;
+          *flags |= Process_fields[id].flags;
+          j++;
++      } else {
++         fields[j] = id;
++         // handle flags here
++         j++;
+       }
+    }
+    fields[j] = NULL_PROCESSFIELD;
+@@ -400,7 +406,7 @@ Settings* Settings_new(unsigned int initialCpuCount) {
+    const ProcessField* defaults = Platform_defaultFields;
+    for (int i = 0; defaults[i]; i++) {
+       this->fields[i] = defaults[i];
+-      this->flags |= Process_fields[defaults[i]].flags;
++      this->flags |= Process_fields[defaults[i]].flags; // change this ?!
+    }
+ 
+    char* legacyDotfile = NULL;
+diff --git a/pcp/PCPDynamicMeter.c b/pcp/PCPDynamicMeter.c
+index a89c132..d2ac47c 100644
+--- a/pcp/PCPDynamicMeter.c
++++ b/pcp/PCPDynamicMeter.c
+@@ -64,6 +64,7 @@ static void PCPDynamicMeter_parseMetric(PCPDynamicMeters* meters, PCPDynamicMete
+       char* error;
+       if (pmRegisterDerivedMetric(metric->name, value, &error) < 0) {
+          char* note;
++         fprintf(stderr, "OK2...........................%s - %s\n", metric->name, value);
+          xAsprintf(&note,
+                    "%s: failed to parse expression in %s at line %u\n%s\n",
+                    pmGetProgname(), path, line, error);
+diff --git a/pcp/PCPProcessList.c b/pcp/PCPProcessList.c
+index bece854..915def4 100644
+--- a/pcp/PCPProcessList.c
++++ b/pcp/PCPProcessList.c
+@@ -275,6 +275,7 @@ static void PCPProcessList_updateCmdline(Process* process, int pid, int offset,
+ 
+    char *command = value.cp;
+    int length = strlen(command);
++   // @smalinux FIXME remove if & else.. to get ALL process and threads
+    if (command[0] != '(') {
+       process->isKernelThread = false;
+    } else {
+@@ -306,6 +307,7 @@ static void PCPProcessList_updateCmdline(Process* process, int pid, int offset,
+    }
+ }
+ 
++// LOOKATME
+ static bool PCPProcessList_updateProcesses(PCPProcessList* this, double period, struct timeval* tv) {
+    ProcessList* pl = (ProcessList*) this;
+    const Settings* settings = pl->settings;
+@@ -317,12 +319,21 @@ static bool PCPProcessList_updateProcesses(PCPProcessList* this, double period,
+    int pid = -1, offset = -1;
+ 
+    /* for every process ... */
+-   while (Metric_iterate(PCP_PROC_PID, &pid, &offset)) {
++   //mydump(165);
++   //int mypid = -1, myoffset = -1;
++   /*
++   while(mydump_pid(67, &mypid, &myoffset)) {
++      fprintf(stderr, "hello\n");
++   }
++   */
++
++   while (Metric_iterate(PCP_PROC_PID, &pid, &offset)) { // FIXME LOOKATME
+ 
++      //fprintf(stderr, ">>>>>>> offset %d PID %d\n", offset, pid);
+       bool preExisting;
+       Process* proc = ProcessList_getProcess(pl, pid, &preExisting, PCPProcess_new);
+       PCPProcess* pp = (PCPProcess*) proc;
+-      PCPProcessList_updateID(proc, pid, offset);
++      PCPProcessList_updateID(proc, pid, offset); // FIXME LOOKATME
+ 
+       /*
+        * These conditions will not trigger on first occurrence, cause we need to
+@@ -422,6 +433,9 @@ static bool PCPProcessList_updateProcesses(PCPProcessList* this, double period,
+          pl->runningTasks++;
+       proc->updated = true;
+    }
++   // dump here - for every scan/second - not in the loop ( every PID!)
++   //mydump_inst(100, 1837);
++   //my_ps_aux(1);
+    return true;
+ }
+ 
+@@ -638,6 +652,8 @@ void ProcessList_goThroughEntries(ProcessList* super, bool pauseProcessUpdate) {
+    for (int metric = PCP_PROC_PID; metric < PCP_METRIC_COUNT; metric++)
+       Metric_enable(metric, enabled);
+ 
++   Metric_enable(165, enabled);
++
+    flagged = settings->flags & PROCESS_FLAG_LINUX_CGROUP;
+    Metric_enable(PCP_PROC_CGROUPS, flagged && enabled);
+    flagged = settings->flags & PROCESS_FLAG_LINUX_OOM;
+diff --git a/pcp/Platform.c b/pcp/Platform.c
+index 6512ed6..c1216e3 100644
+--- a/pcp/Platform.c
++++ b/pcp/Platform.c
+@@ -49,6 +49,33 @@ in the source distribution for its full text.
+ #include "zfs/ZfsArcStats.h"
+ #include "zfs/ZfsCompressedArcMeter.h"
+ 
++/* // i already use the existing one
++typedef struct {
++   unsigned int id;
++   ColorElements color;
++   char* name;
++   char* label;
++   char* suffix;
++} PCPDynamicMetric;
++*/
++
++typedef struct {
++   DynamicMeter super;
++   PCPDynamicMetric* metrics;
++   unsigned int totalMetrics;
++} PCPDynamicColumn;
++
++typedef struct {
++   Hashtable* table;
++   unsigned int count; /* count of dynamic meters discovered by scan */
++   unsigned int offset; /* start offset into the Platform metric array */
++   unsigned int cursor; /* identifier allocator for each new metric used */
++} PCPDynamicColumns;
++
++typedef struct {
++   unsigned int key;
++   const char* name;
++} DynamicIterator;
+ 
+ typedef struct Platform_ {
+    int context;			/* PMAPI(3) context identifier */
+@@ -59,6 +86,7 @@ typedef struct Platform_ {
+    pmDesc* descs;		/* metric desc array indexed by Metric */
+    pmResult* result;		/* sample values result indexed by Metric */
+    PCPDynamicMeters meters;	/* dynamic meters via configuration files */
++   PCPDynamicColumns columns;
+    struct timeval offset;	/* time offset used in archive mode only */
+    long long btime;		/* boottime in seconds since the epoch */
+    char* release;		/* uname and distro from this context */
+@@ -68,9 +96,75 @@ typedef struct Platform_ {
+ 
+ Platform* pcp;
+ 
++void PCPDynamicColumns_init(PCPDynamicColumns* meters);
++
++unsigned int DynamicColumn_search(const char* name);
++const char* DynamicColumn_lookup(unsigned int key);
++
++
++// inspired from Metric_iterate function
++bool mydump_pid(Metric metric, int* instp, int* offsetp) {
++   if (!pcp->result){
++      fprintf(stderr, "111111111\n");
++      return false;
++   }
++
++   pmValueSet* vset = pcp->result->vset[metric];
++   if (!vset || vset->numval <= 0) {
++
++      fprintf(stderr, "222222222 vset->numval %d\n", vset->numval);
++      fprintf(stderr, "err: %s", pmErrStr(vset->numval));
++      return false;
++   }
++
++   int offset = *offsetp;
++   offset = (offset < 0) ? 0 : offset + 1;
++   if (offset > vset->numval - 1) {
++
++      fprintf(stderr, "Finish!!!\n");
++      return false;
++   }
++
++   *offsetp = offset;
++   *instp = vset->vlist[offset].inst;
++   fprintf(stderr, "offset %d PID %d\n", *offsetp, *instp);
++   return true;
++}
++
++/*
++ * takes me:
++ * - the offset platform metric
++ * - PID
++ * and I will print the value of metric[inst]
++ *
++ * Inspired from Metric_instance
++ *
++ * vlist == inst offset
++ */
++void mydump_inst(Metric metric, int inst) {
++   pmValueSet* vset = pcp->result->vset[metric];
++   const pmDesc* desc = &pcp->descs[metric];
++
++   for (int i = 0; i < vset->numval; i++) {
++      if (inst == vset->vlist[i].inst) {
++         fprintf(stderr, "PID %d, vlist[i]: %d, Value: ", inst, metric);
++         pmPrintValue(stderr, vset->valfmt, desc->type, &vset->vlist[i], 1);
++         fprintf(stderr, "\n");
++      }
++   }
++}
++
++/* Give me PID and I will ALL related instance */
++void my_ps_aux(Metric metric) {
++   for(int i = 67; i <= 100; ++i) {
++      mydump_inst(i, metric);
++   }
++}
++
++
+ ProcessField Platform_defaultFields[] = { PID, USER, PRIORITY, NICE, M_VIRT, M_RESIDENT, (int)M_SHARE, STATE, PERCENT_CPU, PERCENT_MEM, TIME, COMM, 0 };
+ 
+-int Platform_numberOfFields = LAST_PROCESSFIELD;
++int Platform_numberOfFields = LAST_PROCESSFIELD; // ??!!
+ 
+ const SignalItem Platform_signals[] = {
+    { .name = " 0 Cancel",    .number = 0 },
+@@ -247,6 +341,16 @@ static const char* Platform_metricNames[] = {
+    [PCP_METRIC_COUNT] = NULL
+ };
+ 
++
++void mydump(Metric metric) {
++   pmValueSet* vset = pcp->result->vset[metric];
++   const pmDesc* desc = &pcp->descs[metric];
++   fprintf(stderr, "From mydump() ===============>> %d - %s\n",
++         metric, pcp->names[metric]);
++   pmPrintValue(stderr, vset->valfmt, desc->type, &vset->vlist[0], 1);
++   fprintf(stderr, "\n");
++}
++
+ const pmDesc* Metric_desc(Metric metric) {
+    return &pcp->descs[metric];
+ }
+@@ -350,6 +454,7 @@ bool Metric_iterate(Metric metric, int* instp, int* offsetp) {
+ 
+    *offsetp = offset;
+    *instp = vset->vlist[offset].inst;
++   //fprintf(stderr, "offset %d PID %d\n", *offsetp, *instp);
+    return true;
+ }
+ 
+@@ -449,10 +554,10 @@ void Platform_init(void) {
+ 
+    pcp = xCalloc(1, sizeof(Platform));
+    pcp->context = sts;
+-   pcp->fetch = xCalloc(PCP_METRIC_COUNT, sizeof(pmID));
+-   pcp->pmids = xCalloc(PCP_METRIC_COUNT, sizeof(pmID));
+-   pcp->names = xCalloc(PCP_METRIC_COUNT, sizeof(char*));
+-   pcp->descs = xCalloc(PCP_METRIC_COUNT, sizeof(pmDesc));
++   pcp->fetch = xCalloc(PCP_METRIC_COUNT, sizeof(pmID)); // FIXME cleanup '10000'
++   pcp->pmids = xCalloc(PCP_METRIC_COUNT, sizeof(pmID)); // FIXME
++   pcp->names = xCalloc(PCP_METRIC_COUNT, sizeof(char*)); // FIXME
++   pcp->descs = xCalloc(PCP_METRIC_COUNT, sizeof(pmDesc)); // FIXME
+ 
+    if (opts.context == PM_CONTEXT_ARCHIVE) {
+       gettimeofday(&pcp->offset, NULL);
+@@ -461,11 +566,67 @@ void Platform_init(void) {
+ 
+    for (unsigned int i = 0; i < PCP_METRIC_COUNT; i++)
+       Platform_addMetric(i, Platform_metricNames[i]);
++   /*
++   fprintf(stderr, "OK........................... PCP_METRIC_COUNT! %u\n", PCP_METRIC_COUNT);
++   fprintf(stderr, "OK........................... totalMetrics! %d\n", pcp->totalMetrics);
++   fprintf(stderr, "OK........................... meters->totalMetrics! %d\n", pcp->meters.count);
++   fprintf(stderr, "OK........................... columns->totalMetrics! %d\n", pcp->columns.count);
++   fprintf(stderr, "........................................................\n");
++   */
+    pcp->meters.offset = PCP_METRIC_COUNT;
+-
+    PCPDynamicMeters_init(&pcp->meters);
+ 
+-   sts = pmLookupName(pcp->totalMetrics, pcp->names, pcp->pmids);
++   pcp->columns.offset = pcp->meters.cursor + PCP_METRIC_COUNT;
++   PCPDynamicColumns_init(&pcp->columns);
++
++   // FIXME REMOVEME
++   for(unsigned int i = 0; i < pcp->totalMetrics; i++) {
++      fprintf(stderr, "%u metric: %s\n", i, pcp->names[i]);
++   }
++
++   // FIXME REMOVEME
++   fprintf(stderr, "......................................................\n");
++   fprintf(stderr, "pcp->columns.count: %u, pcp->columns.cursor: %u, pcp->columns.offset: %u\n",
++         pcp->columns.count, pcp->columns.cursor, pcp->columns.offset);
++
++   // FIXME REMOVEME pcp->columns.table
++   PCPDynamicColumn* cc = Hashtable_get(pcp->columns.table, 1);
++   fprintf(stderr, "PCPDynamicColumn.totalMetrics: %u\n", cc->totalMetrics);
++   for(unsigned int i=0; i < cc->totalMetrics; i++) {
++      //cc->metrics->name
++      fprintf(stderr, "metric %d: %s\n", i, cc->metrics[i].name);
++      fprintf(stderr, "metric %d: %u\n", i, cc->metrics[i].id);
++      fprintf(stderr, "metric %d: %s\n", i, cc->metrics[i].label);
++      fprintf(stderr, "metric %d: %s\n", i, cc->metrics[i].suffix);
++
++      fprintf(stderr, "super.name %d: %s\n", i, cc->super.name);
++      fprintf(stderr, "super.caption %d: %s\n", i, cc->super.caption);
++      fprintf(stderr, "super.description %d: %s\n", i, cc->super.description);
++   }
++
++
++   // FIXME REMOVEME DynamicColumn_search
++   fprintf(stderr, "......................................................\n");
++   fprintf(stderr, "......... DynamicColumn_search........................\n");
++   unsigned int the_key = DynamicColumn_search("unamesys");
++   if(the_key)
++      fprintf(stderr, "exist. at key: %d\n", the_key);
++   else {
++      fprintf(stderr, "No.\n");
++   }
++   fprintf(stderr, "......... traverse ........................\n");
++   PCPDynamicColumn* cc2 = Hashtable_get(pcp->columns.table, the_key);
++   fprintf(stderr, "metric %d: %s\n", the_key, cc2->metrics[0].name);
++   fprintf(stderr, "......................................................\n");
++
++
++   // FIXME REMOVEME DynamicColumn_lookup
++   fprintf(stderr, "......... DynamicColumn_lookup........................\n");
++   fprintf(stderr, "metric %d: %s\n", the_key, DynamicColumn_lookup(the_key));
++
++
++
++   sts = pmLookupName(pcp->totalMetrics, pcp->names, pcp->pmids); // FIXME remove -2
+    if (sts < 0) {
+       fprintf(stderr, "Error: cannot lookup metric names: %s\n", pmErrStr(sts));
+       exit(1);
+@@ -500,6 +661,8 @@ void Platform_init(void) {
+    Metric_enable(PCP_UNAME_RELEASE, true);
+    Metric_enable(PCP_UNAME_MACHINE, true);
+    Metric_enable(PCP_UNAME_DISTRO, true);
++   // enable all Dynamic Columns
++   //Metric_enable(165, true);
+ 
+    Metric_fetch(NULL);
+ 
+@@ -512,6 +675,15 @@ void Platform_init(void) {
+    Metric_enable(PCP_UNAME_MACHINE, false);
+    Metric_enable(PCP_UNAME_DISTRO, false);
+ 
++
++
++   //mydump(165);
++   int mypid = -1, myoffset = -1;
++   //while(mydump_pid(165, &mypid, &myoffset));
++
++
++
++
+    /* first sample (fetch) performed above, save constants */
+    Platform_getBootTime();
+    Platform_getRelease(0);
+@@ -924,3 +1096,279 @@ void Platform_dynamicMeterDisplay(const Meter* meter, RichString* out) {
+    if (this)
+       PCPDynamicMeter_display(this, meter, out);
+ }
++
++
++
++
++
++
++
++
++
++
++
++
++
++
++static PCPDynamicMetric* PCPDynamicColumn_lookupMetric(PCPDynamicColumns* columns, PCPDynamicColumn* column, const char* name) {
++   size_t bytes = 8 + strlen(column->super.name) + strlen(name);
++   char* metricName = xMalloc(bytes);
++   xSnprintf(metricName, bytes, "htop.%s.%s", column->super.name, name);
++
++   PCPDynamicMetric* metric;
++   for (unsigned int i = 0; i < column->totalMetrics; i++) {
++      metric = &column->metrics[i];
++      if (String_eq(metric->name, metricName)) {
++         free(metricName);
++         return metric;
++      }
++   }
++
++   /* not an existing metric in this meter - add it */
++   unsigned int n = column->totalMetrics + 1;
++   column->metrics = xReallocArray(column->metrics, n, sizeof(PCPDynamicMetric));
++   column->totalMetrics = n;
++   metric = &column->metrics[n-1];
++   memset(metric, 0, sizeof(PCPDynamicMetric));
++   metric->name = metricName;
++   metric->label = String_cat(name, ": ");
++   metric->id = columns->offset + columns->cursor;
++   columns->cursor++;
++
++   Platform_addMetric(metric->id, metricName);
++
++   return metric;
++}
++
++static void PCPDynamicColumn_parseMetric(PCPDynamicColumns* meters, PCPDynamicColumn* meter, const char* path, unsigned int line, char* key, char* value) {
++   PCPDynamicMetric* metric;
++   char* p;
++
++   if ((p = strchr(key, '.')) == NULL)
++      return;
++   *p++ = '\0'; /* end the name, p is now the attribute, e.g. 'label' */
++
++   if (String_eq(p, "metric")) {
++      /* lookup a dynamic metric with this name, else create */
++      metric = PCPDynamicColumn_lookupMetric(meters, meter, key);
++
++      /* use derived metrics in dynamic meters for simplicity */
++      char* error;
++      if (pmRegisterDerivedMetric(metric->name, value, &error) < 0) {
++         char* note;
++         xAsprintf(&note,
++                   "%s: failed to parse expression in %s at line %u\n%s\n",
++                   pmGetProgname(), path, line, error);
++         free(error);
++         errno = EINVAL;
++         CRT_fatalError(note);
++         free(note);
++      }
++   } else {
++      /* this is a property of a dynamic metric - the metric expression */
++      /* may not have been observed yet - i.e. we allow for any ordering */
++      metric = PCPDynamicColumn_lookupMetric(meters, meter, key);
++      if (String_eq(p, "color")) {
++         if (String_eq(value, "gray"))
++             metric->color = DYNAMIC_GRAY;
++         else if (String_eq(value, "darkgray"))
++             metric->color = DYNAMIC_DARKGRAY;
++         else if (String_eq(value, "red"))
++             metric->color = DYNAMIC_RED;
++         else if (String_eq(value, "green"))
++             metric->color = DYNAMIC_GREEN;
++         else if (String_eq(value, "blue"))
++             metric->color = DYNAMIC_BLUE;
++         else if (String_eq(value, "cyan"))
++             metric->color = DYNAMIC_CYAN;
++         else if (String_eq(value, "magenta"))
++             metric->color = DYNAMIC_MAGENTA;
++         else if (String_eq(value, "yellow"))
++             metric->color = DYNAMIC_YELLOW;
++         else if (String_eq(value, "white"))
++             metric->color = DYNAMIC_WHITE;
++      } else if (String_eq(p, "label")) {
++         char* label = String_cat(value, ": ");
++         free_and_xStrdup(&metric->label, label);
++         free(label);
++      } else if (String_eq(p, "suffix")) {
++         free_and_xStrdup(&metric->suffix, value);
++      }
++   }
++}
++
++// Ensure a valid name for use in a PCP metric name and in htoprc
++static void PCPDynamicColumn_validateColumnName(char* key, const char* path, unsigned int line) {
++   char* p = key;
++   char* end = strrchr(key, ']');
++
++   if (end) {
++      *end = '\0';
++   } else {
++      char* note;
++      xAsprintf(&note,
++                "%s: no closing brace on column....... name at %s line %u\n\"%s\"",
++                pmGetProgname(), path, line, key);
++      errno = EINVAL;
++      CRT_fatalError(note);
++      free(note);
++   }
++
++   while (*p) {
++      if (p == key) {
++         if (!isalpha(*p) && *p != '_')
++            break;
++      } else {
++         if (!isalnum(*p) && *p != '_')
++            break;
++      }
++      p++;
++   }
++   if (*p != '\0') { /* badness */
++      char* note;
++      xAsprintf(&note,
++                "%s: invalid column....... name at %s line %u\n\"%s\"",
++                pmGetProgname(), path, line, key);
++      errno = EINVAL;
++      CRT_fatalError(note);
++      free(note);
++   } else { /* overwrite closing brace */
++      *p = '\0';
++   }
++}
++
++static PCPDynamicColumn* PCPDynamicColumn_new(PCPDynamicColumns* meters, const char* name) {
++   PCPDynamicColumn* meter = xCalloc(1, sizeof(*meter));
++   String_safeStrncpy(meter->super.name, name, sizeof(meter->super.name));
++   Hashtable_put(meters->table, ++meters->count, meter);
++   return meter;
++}
++
++static void PCPDynamicColumn_parseFile(PCPDynamicColumns* meters, const char* path) {
++   FILE* file = fopen(path, "r");
++   if (!file)
++      return;
++
++   PCPDynamicColumn* meter = NULL;
++   unsigned int lineno = 0;
++   for (;;) {
++      char* line = String_readLine(file);
++      if (!line)
++         break;
++      lineno++;
++
++      /* cleanup whitespace, skip comment lines */
++      char* trimmed = String_trim(line);
++      free(line);
++      if (trimmed[0] == '#' || trimmed[0] == '\0') {
++         free(trimmed);
++         continue;
++      }
++
++      size_t n;
++      char** config = String_split(trimmed, '=', &n);
++      free(trimmed);
++      if (config == NULL)
++         continue;
++
++      char* key = String_trim(config[0]);
++      char* value = n > 1 ? String_trim(config[1]) : NULL;
++      if (key[0] == '[') {  /* new section heading - i.e. new meter */
++         PCPDynamicColumn_validateColumnName(key+1, path, lineno);
++         meter = PCPDynamicColumn_new(meters, key+1);
++      } else if (value && String_eq(key, "caption")) {
++         char* caption = String_cat(value, ": ");
++         free_and_xStrdup(&meter->super.caption, caption);
++         free(caption);
++      } else if (value && String_eq(key, "description")) {
++         free_and_xStrdup(&meter->super.description, value);
++      } else if (value && String_eq(key, "type")) {
++         if (String_eq(config[1], "bar"))
++             meter->super.type = BAR_METERMODE;
++         else if (String_eq(config[1], "text"))
++             meter->super.type = TEXT_METERMODE;
++         else if (String_eq(config[1], "graph"))
++             meter->super.type = GRAPH_METERMODE;
++         else if (String_eq(config[1], "led"))
++             meter->super.type = LED_METERMODE;
++      } else if (value && String_eq(key, "maximum")) {
++         meter->super.maximum = strtod(value, NULL);
++      } else if (value) {
++         PCPDynamicColumn_parseMetric(meters, meter, path, lineno, key, value);
++      }
++      String_freeArray(config);
++      free(value);
++      free(key);
++   }
++   fclose(file);
++}
++
++static void PCPDynamicColumn_scanDir(PCPDynamicColumns* meters, char* path) {
++   DIR* dir = opendir(path);
++   if (!dir)
++      return;
++
++   struct dirent* dirent;
++   while ((dirent = readdir(dir)) != NULL) {
++      if (dirent->d_name[0] == '.')
++         continue;
++
++      char* file = String_cat(path, dirent->d_name);
++      PCPDynamicColumn_parseFile(meters, file);
++      free(file);
++   }
++   closedir(dir);
++}
++
++void PCPDynamicColumns_init(PCPDynamicColumns* meters) {
++   const char* sysconf = pmGetConfig("PCP_SYSCONF_DIR");
++   const char* xdgConfigHome = getenv("XDG_CONFIG_HOME");
++   const char* home = getenv("HOME");
++   char* path;
++
++   meters->table = Hashtable_new(0, true);
++
++   /* search in the users home directory first of all */
++   if (xdgConfigHome) {
++      path = String_cat(xdgConfigHome, "/htop/columns/");
++   } else {
++      if (!home)
++         home = "";
++      path = String_cat(home, "/.config/htop/columns/");
++   }
++   PCPDynamicColumn_scanDir(meters, path);
++   free(path);
++
++   /* secondly search in the system meters directory */
++   path = String_cat(sysconf, "/htop/columns/");
++   PCPDynamicColumn_scanDir(meters, path);
++   free(path);
++
++   /* check the working directory, as a final option */
++   char cwd[PATH_MAX];
++   if (getcwd(cwd, sizeof(cwd)) != NULL) {
++      path = String_cat(cwd, "/pcp/columns/");
++      PCPDynamicColumn_scanDir(meters, path);
++      free(path);
++   }
++}
++
++
++static void DynamicMeter_compare(ht_key_t key, void* value, void* data) {
++   const DynamicMeter* meter = (const DynamicMeter*)value;
++   DynamicIterator* iter = (DynamicIterator*)data;
++   if (String_eq(iter->name, meter->name))
++      iter->key = key;
++}
++
++unsigned int DynamicColumn_search(const char* name) {
++   DynamicIterator iter = { .key = 0, .name = name };
++   if (pcp->columns.table)
++      Hashtable_foreach(pcp->columns.table, DynamicMeter_compare, &iter);
++   return iter.key;
++}
++
++const char* DynamicColumn_lookup(unsigned int key) {
++   const DynamicMeter* meter = Hashtable_get(pcp->columns.table, key);
++   return meter ? meter->name : NULL;
++}
+diff --git a/pcp/Platform.h b/pcp/Platform.h
+index 6b0215c..b502d84 100644
+--- a/pcp/Platform.h
++++ b/pcp/Platform.h
+@@ -270,4 +270,10 @@ void Platform_dynamicMeterUpdateValues(Meter* meter);
+ 
+ void Platform_dynamicMeterDisplay(const Meter* meter, RichString* out);
+ 
++
++bool mydump_pid(Metric metric, int* instp, int* offsetp);
++void mydump(Metric metric);
++void mydump_inst(Metric metric, int offset);
++void my_ps_aux(Metric metric);
++
+ #endif
+-- 
+2.25.1
+
