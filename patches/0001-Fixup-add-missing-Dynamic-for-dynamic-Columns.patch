@@ -1,0 +1,31 @@
+From 60fb705cf6648dc8cdc2cf9267dfe23e3ff7ba84 Mon Sep 17 00:00:00 2001
+From: Sohaib Mohamed <sohaib.amhmd@gmail.com>
+Date: Fri, 15 Oct 2021 11:00:41 +0200
+Subject: [PATCH] Fixup: add missing `Dynamic()` for dynamic Columns
+
+Signed-off-by: Sohaib Mohamed <sohaib.amhmd@gmail.com>
+---
+ Settings.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/Settings.c b/Settings.c
+index 7c55e60..db8ddcf 100644
+--- a/Settings.c
++++ b/Settings.c
+@@ -459,9 +459,12 @@ static bool Settings_read(Settings* this, const char* fileName, unsigned int ini
+ static void writeFields(FILE* fd, const ProcessField* fields, Hashtable* columns, bool byName, char separator) {
+    const char* sep = "";
+    for (unsigned int i = 0; fields[i]; i++) {
+-      if (fields[i] >= LAST_PROCESSFIELD || byName) {
++      if (fields[i] < LAST_PROCESSFIELD && byName) {
+          const char* pName = toFieldName(columns, fields[i]);
+          fprintf(fd, "%s%s", sep, pName);
++      } else if(fields[i] >= LAST_PROCESSFIELD && byName) {
++         const char* pName = toFieldName(columns, fields[i]);
++         fprintf(fd, " Dynamic(%s)", pName);
+       } else {
+          // This "-1" is for compatibility with the older enum format.
+          fprintf(fd, "%s%d", sep, (int) fields[i] - 1);
+-- 
+2.25.1
+
