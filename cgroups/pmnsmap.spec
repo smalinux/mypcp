@@ -8,4 +8,9 @@ pmclient_sample {
     kernel.percpu.cpu.sys	CPU_SYS
     mem.freemem		FREEMEM
     disk.all.total		DKIOPS
+
+    kernel.uname.release RELEADE
+}
+
+cgroups {
 }

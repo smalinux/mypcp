@@ -55,6 +55,10 @@ typedef struct {
     int			dkiops;		/* aggregate disk I/O's per second */
     float		load1;		/* 1 minute load average */
     float		load15;		/* 15 minute load average */
+
+    // SMA: cgroups
+    char    *release;
+
 } info_t;
 
 static unsigned int	ncpu;
@@ -268,6 +272,16 @@ get_sample(info_t *ip)
 	    ip->dkiops = ((float)(ip->dkiops) + 0.5) / dt;
 	}
 
+
+	if (prp->vset[RELEADE]->numval <= 0 || crp->vset[RELEADE]->numval <= 0) {
+	    ip->release = NULL;
+	}
+	else {
+	    pmExtractValue(crp->vset[RELEADE]->valfmt, crp->vset[RELEADE]->vlist,
+			desclist[RELEADE].type, &atom, PM_TYPE_STRING);
+	    ip->release = atom.cp;
+	}
+
 	/* load average ... process all values, matching up the instances */
 	ip->load1 = ip->load15 = -1;
 	for (i = 0; i < crp->vset[LOADAV]->numval; i++) {
@@ -431,9 +445,42 @@ X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
 	else
 	    printf("  %7.7s", "?");
 	if (info.load15 >= 0)
-	    printf("  %7.2f\n", info.load15);
+	    printf("  %7.2f", info.load15);
 	else
-	    printf("  %7.7s\n", "?");
+	    printf("  %7.7s", "?");
+
+//	if (info.x >= 0)
+//	    printf("  %7.2f\n", info.x);
+//	else
+//	    printf("  %7.7s\n", "?");
+//
+
+	if (info.release >= 0)
+	    printf("  %s", info.release);
+	else
+	    printf("  %7.7s", "?");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    printf("\n");
  	lines++;
     }
     exit(0);
