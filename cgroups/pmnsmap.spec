@@ -10,6 +10,7 @@ pmclient_sample {
     disk.all.total		DKIOPS
 
     kernel.uname.release RELEADE
+    cgroup.pressure.memory.full.total CGP_total
 }
 
 cgroups {

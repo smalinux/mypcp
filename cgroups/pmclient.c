@@ -46,6 +46,8 @@ pmOptions opts = {
     .long_options = longopts,
 };
 
+#define numfetchs       100
+
 typedef struct {
     struct timeval	timestamp;	/* last fetched time */
     float		cpu_util;	/* aggregate CPU utilization, usr+sys */
@@ -58,8 +60,43 @@ typedef struct {
 
     // SMA: cgroups
     char    *release;
+    uint64_t      cgp_total[numfetchs];
+    char        *cgp_total_name[numfetchs];
 
 } info_t;
+
+// ----------------------------------------------------------------------------
+static pmInDom		icache_nameindom = PM_INDOM_NULL;
+static int		icache_numinst = -1;
+static int		*icache_instlist;
+static char		**icache_namelist;
+
+static void
+icache_update_name(pmInDom indom)
+{
+    if (indom == icache_nameindom)
+	return;
+    if (icache_numinst > 0) {
+	free(icache_instlist);
+	free(icache_namelist);
+    }
+    icache_numinst = pmGetInDom(indom, &icache_instlist, &icache_namelist);
+    icache_nameindom = indom;
+}
+
+static char *
+lookup_instance_name(pmInDom indom, int inst)
+{
+    int			i;
+
+    icache_update_name(indom);
+    for (i = 0; i < icache_numinst; i++)
+        if (icache_instlist[i] == inst)
+            return icache_namelist[i];
+    return NULL;
+}
+
+// ----------------------------------------------------------------------------
 
 static unsigned int	ncpu;
 
@@ -282,6 +319,17 @@ get_sample(info_t *ip)
 	    ip->release = atom.cp;
 	}
 
+    for (i = 0; i < numfetchs; i++) {
+        // if (prp->vset[CGP_total]->numval <= 0 || crp->vset[CGP_total]->numval <= 0) {
+        //     ip->cgp_total = -1;
+        // }
+        //else {
+            pmExtractValue(crp->vset[CGP_total]->valfmt, &crp->vset[CGP_total]->vlist[i],
+                desclist[CGP_total].type, &atom, PM_TYPE_U64);
+            ip->cgp_total[i] = atom.ull;
+            ip->cgp_total_name[i]     = lookup_instance_name(desclist[CGP_total].indom, crp->vset[CGP_total]->vlist[i].inst);
+        //}
+    }
 	/* load average ... process all values, matching up the instances */
 	ip->load1 = ip->load15 = -1;
 	for (i = 0; i < crp->vset[LOADAV]->numval; i++) {
@@ -462,8 +510,17 @@ X.XXX   XXX   X.XXX XXXXX.XXX XXXXXX  XXXX.XX XXXX.XX
 
 
 
+    printf("\n");
 
 
+    for (int i = 0; i < 100; i++) {
+        if (info.cgp_total[i] >= 0) {
+            printf("%s:  %" PRIu64, info.cgp_total_name[i], info.cgp_total[i]);
+            printf("\n");
+        }
+        else
+            printf("  %7.7s", "?");
+    }
 
 
 
